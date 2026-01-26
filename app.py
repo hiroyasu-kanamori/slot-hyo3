@@ -38,7 +38,6 @@ def get_rename_dict():
                 rename_df = pd.read_csv(RENAME_FILE, encoding='utf-8')
             except:
                 rename_df = pd.read_csv(RENAME_FILE, encoding='cp932')
-            # 列名 original_name, display_name を使用
             return dict(zip(rename_df['original_name'], rename_df['display_name']))
         except Exception as e:
             st.warning(f"置換ファイルの読み取りエラー: {e}")
@@ -49,6 +48,7 @@ rename_dict = get_rename_dict()
 
 def apply_rename(name):
     """辞書にあれば置換、なければそのまま返す"""
+    if name == "-- 選択 --": return ""
     return rename_dict.get(name, name)
 
 # ==========================================
@@ -156,9 +156,9 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
 
 st.title("📊 優秀台レポート作成アプリ")
 
-# 辞書読み込みの通知
+# 辞書状況表示
 if rename_dict:
-    st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）を読み込みました。表示名は自動で適用されます。")
+    st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
 
 st.header("STEP 1: CSVデータの読み込み")
 uploaded_file = st.file_uploader("CSVファイルをアップロードしてください", type=['csv'])
@@ -204,13 +204,21 @@ if uploaded_file:
                 with st.popover(f"➕ 機種を追加"):
                     new_ts = []
                     for i in range(1, 4):
+                        # 1. 機種選択
                         m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}")
-                        d = st.text_input(f"表示名 {i} (空欄で辞書を適用)", key=f"d{sid}_{i}")
+                        
+                        # 2. 表示名の初期値を辞書から動的に取得
+                        # 辞書にあれば置換後の名前を、なければ元の名前を表示。選択前なら空
+                        suggested_name = apply_rename(m)
+                        
+                        d = st.text_input(f"表示名 {i}", value=suggested_name, key=f"d{sid}_{i}")
                         t = st.number_input(f"枚数 {i}", value=1000, step=100, key=f"t{sid}_{i}")
+                        
                         if m != "-- 選択 --":
-                            # ここで空欄なら辞書から引く
-                            final_dn = d if d else apply_rename(m)
+                            # 入力があればそれを採用。なければ辞書の値を採用（念のため）
+                            final_dn = d if d else suggested_name
                             new_ts.append((m, final_dn, t))
+                            
                     if st.button(f"🚀 リストに登録", key=f"btn{sid}"):
                         st.session_state[f'targets{sid}'].extend(new_ts); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
 
