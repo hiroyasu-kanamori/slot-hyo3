@@ -47,11 +47,11 @@ def get_rename_dict():
 rename_dict = get_rename_dict()
 
 def apply_rename(name):
-    if name == "-- 選択 --": return ""
+    if name == "-- 選択 --" or not name: return ""
     return rename_dict.get(name, name)
 
 # ==========================================
-# 永続保存・セッション状態の初期化
+# 【重要】永続保存用ファイル入出力関数
 # ==========================================
 def save_text_to_file(text, filename):
     with open(filename, "w", encoding="utf-8") as f:
@@ -65,18 +65,24 @@ def load_text_from_file(filename, default_text):
     return default_text
 
 def save_targets_to_file(targets, filename):
+    """リストをCSVファイルに物理保存する"""
     df_save = pd.DataFrame(targets, columns=['csv_name', 'display_name', 'threshold'])
     df_save.to_csv(filename, index=False, encoding='utf-8-sig')
 
 def load_targets_from_file(filename):
+    """保存されているCSVファイルからリストを読み込む"""
     if os.path.exists(filename):
         try:
             df_load = pd.read_csv(filename)
-            return list(df_load.itertuples(index=False, name=None))
+            # タプル形式のリストに変換して返す
+            return [tuple(x) for x in df_load.to_numpy()]
         except:
             return []
     return []
 
+# ==========================================
+# セッション状態の初期化
+# ==========================================
 FILES = {
     "1": {"csv": "targets1_data.csv", "txt": "banner_text1.txt", "def_txt": "週間おススメ機種", "color": "#FF0000"},
     "2": {"csv": "targets2_data.csv", "txt": "banner_text2.txt", "def_txt": "月間おススメ機種", "color": "#007BFF"},
@@ -86,12 +92,16 @@ FILES = {
 
 for sid, cfg in FILES.items():
     s_ext = "" if sid == "1" else sid
+    # 看板テキストの読み込み
     if f'it{sid}' not in st.session_state: 
         st.session_state[f'it{sid}'] = load_text_from_file(cfg["txt"], cfg["def_txt"])
     if f'edit_mode{sid}' not in st.session_state: st.session_state[f'edit_mode{sid}'] = False
     if f'bg_color{sid}' not in st.session_state: st.session_state[f'bg_color{sid}'] = cfg["color"]
+    
+    # 【改良】物理ファイルから機種リストを読み込んで復元する
     if cfg["csv"] and f'targets{sid}' not in st.session_state: 
         st.session_state[f'targets{sid}'] = load_targets_from_file(cfg["csv"])
+    
     if f'report_img{sid}' not in st.session_state: st.session_state[f'report_img{sid}'] = None
     
     design_defaults = {'b_height': 100, 'f_size': 50, 'y_adj': -12, 'thickness': 1}
@@ -100,11 +110,9 @@ for sid, cfg in FILES.items():
         if full_key not in st.session_state:
             st.session_state[full_key] = val
 
-# --- 【新規】リアルタイム置換用のコールバック関数 ---
+# リアルタイム置換用のコールバック
 def update_display_name(sid, i):
-    # セレクトボックスで選ばれた機種名を取得
     selected_machine = st.session_state[f"m{sid}_{i}"]
-    # 辞書から置換後の名前を取得して、テキストボックスのsession_stateに直接書き込む
     st.session_state[f"d{sid}_{i}"] = apply_rename(selected_machine)
 
 # --- 看板作成関数 ---
@@ -195,32 +203,33 @@ if uploaded_file:
             st.image(create_banner(st.session_state[f'it{sid}'], st.session_state[f'bg_color{sid}'], st.session_state[f'b_height{s_ext}'], st.session_state[f'f_size{s_ext}'], st.session_state[f'y_adj{s_ext}'], st.session_state[f'thickness{s_ext}'], 800), use_container_width=True)
 
             if sid != "4":
-                st.subheader(f"対象機種の追加")
+                st.subheader(f"対象機種の管理")
                 with st.popover(f"➕ 機種を追加"):
                     new_ts = []
                     for i in range(1, 4):
-                        # 機種選択時に update_display_name を呼び出す
                         m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}", on_change=update_display_name, args=(sid, i))
-                        
-                        # 初期化（最初の描画用）
-                        if f"d{sid}_{i}" not in st.session_state:
-                            st.session_state[f"d{sid}_{i}"] = ""
-
-                        # 表示名の入力ボックス
+                        if f"d{sid}_{i}" not in st.session_state: st.session_state[f"d{sid}_{i}"] = ""
                         d = st.text_input(f"表示名 {i}", key=f"d{sid}_{i}")
                         t = st.number_input(f"枚数 {i}", value=1000, step=100, key=f"t{sid}_{i}")
                         if m != "-- 選択 --": new_ts.append((m, d if d else apply_rename(m), t))
-                            
                     if st.button(f"🚀 リストに登録", key=f"btn{sid}"):
-                        st.session_state[f'targets{sid}'].extend(new_ts); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
+                        st.session_state[f'targets{sid}'].extend(new_ts)
+                        # 【改良】登録した瞬間に物理ファイルに保存する
+                        save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"])
+                        st.rerun()
 
+                # 登録済みリストの表示
                 if st.session_state[f'targets{sid}']:
                     for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn} ({t}枚以上)")
                     c_cl, c_ge = st.columns(2)
                     with c_cl: 
-                        if st.button(f"🗑️ クリア", key=f"clr{sid}"): st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
+                        if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"): 
+                            st.session_state[f'targets{sid}'] = []
+                            # 【改良】クリアボタンで物理ファイルの中身も空にする
+                            save_targets_to_file([], cfg["csv"])
+                            st.rerun()
                     with c_ge:
-                        if st.button(f"🔥 生成", key=f"gen{sid}"):
+                        if st.button(f"🔥 レポート画像を生成", key=f"gen{sid}"):
                             master_rows, h_idx = [], []
                             for cn, dn, thr in st.session_state[f'targets{sid}']:
                                 m_df = df[df[col_m_name] == cn].copy()
@@ -234,7 +243,7 @@ if uploaded_file:
                                     master_rows.append([""] * 7)
                             if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], s_ext)
             
-            else: # レポート4
+            else: # レポート4 (TOP10自動抽出)
                 st.subheader("差枚数上位10台を自動抽出")
                 if st.button("🔥 TOP10レポートを生成", key="gen4"):
                     top10_df = df.sort_values(by=col_diff, ascending=False).head(10).copy()
@@ -248,6 +257,6 @@ if uploaded_file:
             if st.session_state[f'report_img{sid}']:
                 st.image(st.session_state[f'report_img{sid}'])
                 out = io.BytesIO(); st.session_state[f'report_img{sid}'].convert("RGB").save(out, format="JPEG", quality=95)
-                st.download_button(f"✅ 保存", out.getvalue(), f"report{sid}.jpg", "image/jpeg", key=f"dl{sid}")
+                st.download_button(f"✅ 画像を保存", out.getvalue(), f"report{sid}.jpg", "image/jpeg", key=f"dl{sid}")
 
     except Exception as e: st.error(f"エラー: {e}")
