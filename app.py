@@ -156,7 +156,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         if r in h_idx:
             # 優秀台ヘッダー
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
+            txt.set_color('black'); txt.set_fontsize(30); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
             
