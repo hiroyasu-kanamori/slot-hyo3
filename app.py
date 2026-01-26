@@ -27,31 +27,28 @@ font_p = get_font_path()
 prop = fm.FontProperties(fname=font_p) if font_p else fm.FontProperties()
 
 # ==========================================
-# 【新規】機種名置換辞書の読み込み
+# 【重要】機種名置換辞書の読み込み
 # ==========================================
 RENAME_FILE = "rename_list.csv"
 
 def get_rename_dict():
-    """rename_list.csvを読み込んで辞書を返す"""
     if os.path.exists(RENAME_FILE):
         try:
-            # Shift-JIS(cp932)とUTF-8の両方に対応
             try:
                 rename_df = pd.read_csv(RENAME_FILE, encoding='utf-8')
             except:
                 rename_df = pd.read_csv(RENAME_FILE, encoding='cp932')
-            # 辞書形式に変換 {元の名前: 変更後の名前}
+            # 列名 original_name, display_name を使用
             return dict(zip(rename_df['original_name'], rename_df['display_name']))
         except Exception as e:
-            st.warning(f"置換ファイルの読み込みに失敗しました(列名を確認してください): {e}")
+            st.warning(f"置換ファイルの読み取りエラー: {e}")
             return {}
     return {}
 
-# 置換辞書を取得
 rename_dict = get_rename_dict()
 
 def apply_rename(name):
-    """辞書に名前があれば置換、なければそのまま返す"""
+    """辞書にあれば置換、なければそのまま返す"""
     return rename_dict.get(name, name)
 
 # ==========================================
@@ -134,7 +131,8 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         cell.get_text().set_fontproperties(prop)
         if r in h_idx:
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt = cell.get_text(); txt.set_color('black')
+            txt = cell.get_text()
+            txt.set_color('black')
             txt.set_fontsize(24); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
@@ -158,9 +156,9 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
 
 st.title("📊 優秀台レポート作成アプリ")
 
-# 置換辞書の状況をひっそり表示
+# 辞書読み込みの通知
 if rename_dict:
-    st.caption(f"ℹ️ 機種名置換ルールを {len(rename_dict)} 件適用中")
+    st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）を読み込みました。表示名は自動で適用されます。")
 
 st.header("STEP 1: CSVデータの読み込み")
 uploaded_file = st.file_uploader("CSVファイルをアップロードしてください", type=['csv'])
@@ -183,6 +181,7 @@ if uploaded_file:
             icons = {"1": "🔴", "2": "🔵", "3": "🟢", "4": "⚫"}
             st.header(f"{icons[sid]} レポート {sid}")
             
+            # 看板テキスト
             c_text, c_btn = st.columns([4, 1])
             with c_text: st.text_input(f"看板{sid}のテキスト", value=st.session_state[f'it{sid}'], key=f"it{sid}", disabled=not st.session_state[f'edit_mode{sid}'])
             with c_btn:
@@ -205,47 +204,44 @@ if uploaded_file:
                 with st.popover(f"➕ 機種を追加"):
                     new_ts = []
                     for i in range(1, 4):
-                        # ここでも表示名に置換を適用した選択肢を見せることができますが、一旦シンプルに
                         m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}")
-                        d = st.text_input(f"表示名 {i}", key=f"d{sid}_{i}")
+                        d = st.text_input(f"表示名 {i} (空欄で辞書を適用)", key=f"d{sid}_{i}")
                         t = st.number_input(f"枚数 {i}", value=1000, step=100, key=f"t{sid}_{i}")
-                        if m != "-- 選択 --": new_ts.append((m, d if d else m, t))
+                        if m != "-- 選択 --":
+                            # ここで空欄なら辞書から引く
+                            final_dn = d if d else apply_rename(m)
+                            new_ts.append((m, final_dn, t))
                     if st.button(f"🚀 リストに登録", key=f"btn{sid}"):
                         st.session_state[f'targets{sid}'].extend(new_ts); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
 
                 if st.session_state[f'targets{sid}']:
                     for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): 
-                        # リスト表示でも置換を適用
-                        st.write(f"{i+1}. {apply_rename(dn)} ({t}枚以上)")
+                        st.write(f"{i+1}. {dn} ({t}枚以上)")
                     c_cl, c_ge = st.columns(2)
                     with c_cl: 
                         if st.button(f"🗑️ クリア", key=f"clr{sid}"): st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
                     with c_ge:
                         if st.button(f"🔥 生成", key=f"gen{sid}"):
-                            master_rows = []
-                            h_idx = []
+                            master_rows, h_idx = [], []
                             for cn, dn, thr in st.session_state[f'targets{sid}']:
                                 m_df = df[df[col_m_name] == cn].copy()
                                 e_df = m_df[m_df[col_diff] >= thr].copy().sort_values(col_number)
                                 if not e_df.empty:
                                     h_idx.append(len(master_rows))
-                                    # 置換した名前をセット
-                                    renamed_m = apply_rename(dn)
-                                    master_rows.append([f"{renamed_m} 優秀台"] * 7)
+                                    master_rows.append([f"{dn} 優秀台"] * 7)
                                     master_rows.append(['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数'])
                                     for _, r in e_df.iterrows():
-                                        master_rows.append([str(int(r[col_number])), renamed_m, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
+                                        master_rows.append([str(int(r[col_number])), dn, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
                                     master_rows.append([""] * 7)
                             if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], s_ext)
             
-            else: # レポート4専用 (TOP10自動抽出)
+            else: # レポート4
                 st.subheader("差枚数上位10台を自動抽出")
                 if st.button("🔥 TOP10レポートを生成", key="gen4"):
                     top10_df = df.sort_values(by=col_diff, ascending=False).head(10).copy()
                     master_rows = [[f"{st.session_state.it4}"] * 7, ['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数']]
                     h_idx = [0]
                     for _, r in top10_df.iterrows():
-                        # レポート4も機種名を置換
                         renamed_m4 = apply_rename(str(r[col_m_name]))
                         master_rows.append([str(int(r[col_number])), renamed_m4, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
                     st.session_state.report_img4 = draw_table_image(master_rows, h_idx, st.session_state.bg_color4, st.session_state.it4, "4")
