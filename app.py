@@ -167,7 +167,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         elif (r-1) in h_idx:
             # 項目名ヘッダー
             cell.set_facecolor('#333333')
-            txt.set_color('white'); txt.set_fontsize(24)
+            txt.set_color('white'); txt.set_fontsize(18)
             
         elif master_rows[r] == [""] * 7:
             # 空行
