@@ -167,7 +167,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         elif (r-1) in h_idx:
             # 項目名ヘッダー
             cell.set_facecolor('#333333')
-            txt.set_color('white'); txt.set_fontsize(18)
+            txt.set_color('white'); txt.set_fontsize(24)
             
         elif master_rows[r] == [""] * 7:
             # 空行
@@ -176,7 +176,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         else:
             # データ行
             cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white')
-            txt.set_fontsize(18) # フォントサイズ18固定
+            txt.set_fontsize(24) # フォントサイズ18固定
             
             # 差枚列(最後)の色分け
             if c == 6:
