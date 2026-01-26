@@ -27,7 +27,7 @@ font_p = get_font_path()
 prop = fm.FontProperties(fname=font_p) if font_p else fm.FontProperties()
 
 # ==========================================
-# 【重要】機種名置換辞書の読み込み
+# 機種名置換辞書の読み込み
 # ==========================================
 RENAME_FILE = "rename_list.csv"
 
@@ -47,12 +47,11 @@ def get_rename_dict():
 rename_dict = get_rename_dict()
 
 def apply_rename(name):
-    """辞書にあれば置換、なければそのまま返す"""
     if name == "-- 選択 --": return ""
     return rename_dict.get(name, name)
 
 # ==========================================
-# 【永続保存】ファイル入出力関数
+# 永続保存・セッション状態の初期化
 # ==========================================
 def save_text_to_file(text, filename):
     with open(filename, "w", encoding="utf-8") as f:
@@ -78,9 +77,6 @@ def load_targets_from_file(filename):
             return []
     return []
 
-# ==========================================
-# セッション状態の初期化
-# ==========================================
 FILES = {
     "1": {"csv": "targets1_data.csv", "txt": "banner_text1.txt", "def_txt": "週間おススメ機種", "color": "#FF0000"},
     "2": {"csv": "targets2_data.csv", "txt": "banner_text2.txt", "def_txt": "月間おススメ機種", "color": "#007BFF"},
@@ -104,6 +100,13 @@ for sid, cfg in FILES.items():
         if full_key not in st.session_state:
             st.session_state[full_key] = val
 
+# --- 【新規】リアルタイム置換用のコールバック関数 ---
+def update_display_name(sid, i):
+    # セレクトボックスで選ばれた機種名を取得
+    selected_machine = st.session_state[f"m{sid}_{i}"]
+    # 辞書から置換後の名前を取得して、テキストボックスのsession_stateに直接書き込む
+    st.session_state[f"d{sid}_{i}"] = apply_rename(selected_machine)
+
 # --- 看板作成関数 ---
 def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_width, width):
     height = banner_height
@@ -121,7 +124,7 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
     draw.text((pos_x, pos_y), text, fill="white", font=font, stroke_width=stroke_width)
     return image
 
-# --- レポート生成用共通描画関数 ---
+# --- レポート生成用描画関数 ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     fig, ax = plt.subplots(figsize=(14, len(master_rows) * 0.6))
     ax.axis('off')
@@ -131,8 +134,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         cell.get_text().set_fontproperties(prop)
         if r in h_idx:
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt = cell.get_text()
-            txt.set_color('black')
+            txt = cell.get_text(); txt.set_color('black')
             txt.set_fontsize(24); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
@@ -145,20 +147,15 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             cell.set_height(0.01); cell.visible_edges = ''
         else:
             cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); cell.get_text().set_fontsize(15)
-    
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
     t_img = Image.open(buf)
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
     c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
     c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, b_img.height), t_img)
-    plt.close(fig)
-    return c_img
+    plt.close(fig); return c_img
 
 st.title("📊 優秀台レポート作成アプリ")
-
-# 辞書状況表示
-if rename_dict:
-    st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
+if rename_dict: st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
 
 st.header("STEP 1: CSVデータの読み込み")
 uploaded_file = st.file_uploader("CSVファイルをアップロードしてください", type=['csv'])
@@ -168,7 +165,6 @@ if uploaded_file:
         try: df = pd.read_csv(uploaded_file, encoding='cp932')
         except: uploaded_file.seek(0); df = pd.read_csv(uploaded_file, encoding='utf-8')
         st.success("✅ CSVを読み込みました")
-        
         col_m_name = next((c for c in df.columns if '機種名' in c), None)
         col_number = next((c for c in df.columns if '台番' in c), None)
         col_diff = next((c for c in df.columns if '差枚' in c), None)
@@ -181,7 +177,6 @@ if uploaded_file:
             icons = {"1": "🔴", "2": "🔵", "3": "🟢", "4": "⚫"}
             st.header(f"{icons[sid]} レポート {sid}")
             
-            # 看板テキスト
             c_text, c_btn = st.columns([4, 1])
             with c_text: st.text_input(f"看板{sid}のテキスト", value=st.session_state[f'it{sid}'], key=f"it{sid}", disabled=not st.session_state[f'edit_mode{sid}'])
             with c_btn:
@@ -204,27 +199,23 @@ if uploaded_file:
                 with st.popover(f"➕ 機種を追加"):
                     new_ts = []
                     for i in range(1, 4):
-                        # 1. 機種選択
-                        m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}")
+                        # 機種選択時に update_display_name を呼び出す
+                        m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}", on_change=update_display_name, args=(sid, i))
                         
-                        # 2. 表示名の初期値を辞書から動的に取得
-                        # 辞書にあれば置換後の名前を、なければ元の名前を表示。選択前なら空
-                        suggested_name = apply_rename(m)
-                        
-                        d = st.text_input(f"表示名 {i}", value=suggested_name, key=f"d{sid}_{i}")
+                        # 初期化（最初の描画用）
+                        if f"d{sid}_{i}" not in st.session_state:
+                            st.session_state[f"d{sid}_{i}"] = ""
+
+                        # 表示名の入力ボックス
+                        d = st.text_input(f"表示名 {i}", key=f"d{sid}_{i}")
                         t = st.number_input(f"枚数 {i}", value=1000, step=100, key=f"t{sid}_{i}")
-                        
-                        if m != "-- 選択 --":
-                            # 入力があればそれを採用。なければ辞書の値を採用（念のため）
-                            final_dn = d if d else suggested_name
-                            new_ts.append((m, final_dn, t))
+                        if m != "-- 選択 --": new_ts.append((m, d if d else apply_rename(m), t))
                             
                     if st.button(f"🚀 リストに登録", key=f"btn{sid}"):
                         st.session_state[f'targets{sid}'].extend(new_ts); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
 
                 if st.session_state[f'targets{sid}']:
-                    for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): 
-                        st.write(f"{i+1}. {dn} ({t}枚以上)")
+                    for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn} ({t}枚以上)")
                     c_cl, c_ge = st.columns(2)
                     with c_cl: 
                         if st.button(f"🗑️ クリア", key=f"clr{sid}"): st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
