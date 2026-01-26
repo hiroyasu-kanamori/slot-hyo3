@@ -97,7 +97,8 @@ for sid, cfg in FILES.items():
         st.session_state[f'targets{sid}'] = load_targets_from_file(cfg["csv"])
     if f'report_img{sid}' not in st.session_state: st.session_state[f'report_img{sid}'] = None
     
-    design_defaults = {'b_height': 100, 'f_size': 50, 'y_adj': -12, 'thickness': 1}
+    # 【修正1】看板の初期値を指定の数値に変更
+    design_defaults = {'b_height': 130, 'f_size': 80, 'y_adj': -15, 'thickness': 2}
     for key, val in design_defaults.items():
         full_key = f"{key}{s_ext}"
         if full_key not in st.session_state:
@@ -124,12 +125,10 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
     draw.text((pos_x, pos_y), text, fill="white", font=font, stroke_width=stroke_width)
     return image
 
-# --- レポート生成用描画関数 (修正の核心部分) ---
+# --- レポート生成用描画関数 ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    # 行の高さ 0.85インチ固定
     fixed_row_height = 0.85
     num_rows = len(master_rows)
-    # 画像の高さを (行数 × 0.85) に固定
     fig, ax = plt.subplots(figsize=(14, num_rows * fixed_row_height))
     ax.axis('off')
     
@@ -140,21 +139,17 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         cellLoc='center'
     )
     
-    # 自動サイズ調整をオフ
     table.auto_set_font_size(False)
     
     for (r, c), cell in table.get_celld().items():
-        # 垂直中央揃えを強制
         txt = cell.get_text()
         txt.set_fontproperties(prop)
         txt.set_verticalalignment('center_baseline')
         txt.set_horizontalalignment('center')
         
-        # セルの高さを画像全体に対する比率で固定
         cell.set_height(1.0 / num_rows)
         
         if r in h_idx:
-            # 優秀台ヘッダー
             cell.set_facecolor(color); cell.set_edgecolor(color)
             txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
@@ -165,34 +160,27 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             else: cell.visible_edges = 'TB'
             
         elif (r-1) in h_idx:
-            # 項目名ヘッダー
             cell.set_facecolor('#333333')
             txt.set_color('white'); txt.set_fontsize(18)
             
         elif master_rows[r] == [""] * 7:
-            # 空行
             cell.set_height(0.01); cell.visible_edges = ''
             
         else:
-            # データ行
             cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white')
-            txt.set_fontsize(24) # フォントサイズ18固定
-            
-            # 差枚列(最後)の色分け
-            if c == 6:
-                val_str = master_rows[r][6].replace('+', '').replace('枚', '').replace(',', '')
-                try:
-                    val = int(val_str)
-                    if val > 0: txt.set_color('red')
-                    elif val < 0: txt.set_color('blue')
-                except: pass
+            txt.set_fontsize(18)
+            txt.set_color('black')
 
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
     t_img = Image.open(buf)
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
-    c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
-    c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, b_img.height), t_img)
+    
+    # 【修正2】看板と表のセパレート値を 0.01 に設定して隙間を最小化
+    c_img = Image.new("RGBA", (t_img.width, int(b_img.height * 1.01) + t_img.height), (255, 255, 255, 255))
+    c_img.paste(b_img, (0, 0), b_img)
+    c_img.paste(t_img, (0, int(b_img.height * 1.01)), t_img)
+    
     plt.close(fig); return c_img
 
 # --- UI構築開始 ---
@@ -208,7 +196,6 @@ if uploaded_file:
         except: uploaded_file.seek(0); df = pd.read_csv(uploaded_file, encoding='utf-8')
         st.success("✅ CSVを読み込みました")
         
-        # 汎用的なカラム取得
         col_m_name = next((c for c in df.columns if '機種名' in c), "機種名")
         col_number = next((c for c in df.columns if '台番' in c), "台番")
         col_diff = next((c for c in df.columns if '差枚' in c), "差枚")
@@ -267,17 +254,15 @@ if uploaded_file:
                                     master_rows.append([f"{dn} 優秀台"] * 7)
                                     master_rows.append(['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数'])
                                     for _, r in e_df.iterrows():
-                                        # 数値データの取得を安全に行う
                                         g_val = f"{int(r.get('G数', 0)):,}G" if 'G数' in df.columns else f"{int(r.iloc[2]):,}G"
                                         bb_val = str(int(r.get('BB', 0))) if 'BB' in df.columns else str(int(r.iloc[3]))
                                         rb_val = str(int(r.get('RB', 0))) if 'RB' in df.columns else str(int(r.iloc[4]))
                                         at_val = str(int(r.get('ART', 0))) if 'ART' in df.columns else str(int(r.iloc[5]))
-                                        
                                         master_rows.append([str(int(r[col_number])), dn, g_val, bb_val, rb_val, at_val, f"+{int(r[col_diff]):,}枚"])
                                     master_rows.append([""] * 7)
                             if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], s_ext)
             
-            else: # レポート4 (TOP10)
+            else: # レポート4
                 st.subheader("差枚数上位10台を自動抽出")
                 if st.button("🔥 TOP10レポートを生成", key="gen4"):
                     top10_df = df.sort_values(by=col_diff, ascending=False).head(10).copy()
@@ -292,7 +277,6 @@ if uploaded_file:
                         master_rows.append([str(int(r[col_number])), renamed_m4, g_val, bb_val, rb_val, at_val, f"+{int(r[col_diff]):,}枚"])
                     st.session_state.report_img4 = draw_table_image(master_rows, h_idx, st.session_state.bg_color4, st.session_state.it4, "4")
 
-            # 画像プレビュー表示エリア
             if st.session_state[f'report_img{sid}']:
                 st.image(st.session_state[f'report_img{sid}'])
                 c_img_dl, c_img_cl = st.columns(2)
