@@ -47,7 +47,7 @@ def get_rename_dict():
 rename_dict = get_rename_dict()
 
 def apply_rename(name):
-    if name == "-- 選択 --" or not name or name == "nan": return ""
+    if name == "-- 選択 --" or not name: return ""
     return rename_dict.get(name, name)
 
 # ==========================================
@@ -97,8 +97,7 @@ for sid, cfg in FILES.items():
         st.session_state[f'targets{sid}'] = load_targets_from_file(cfg["csv"])
     if f'report_img{sid}' not in st.session_state: st.session_state[f'report_img{sid}'] = None
     
-    # 【修正1】看板の初期値を指定の数値に変更
-    design_defaults = {'b_height': 130, 'f_size': 80, 'y_adj': -15, 'thickness': 2}
+    design_defaults = {'b_height': 100, 'f_size': 50, 'y_adj': -12, 'thickness': 1}
     for key, val in design_defaults.items():
         full_key = f"{key}{s_ext}"
         if full_key not in st.session_state:
@@ -127,63 +126,34 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
 
 # --- レポート生成用描画関数 ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    fixed_row_height = 0.85
-    num_rows = len(master_rows)
-    fig, ax = plt.subplots(figsize=(14, num_rows * fixed_row_height))
+    fig, ax = plt.subplots(figsize=(14, len(master_rows) * 0.6))
     ax.axis('off')
-    
-    table = ax.table(
-        cellText=master_rows, 
-        colWidths=[0.1, 0.25, 0.15, 0.1, 0.1, 0.1, 0.2], 
-        loc='center', 
-        cellLoc='center'
-    )
-    
-    table.auto_set_font_size(False)
-    
+    table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
+    table.auto_set_font_size(False); table.scale(1.0, 3.5)
     for (r, c), cell in table.get_celld().items():
-        txt = cell.get_text()
-        txt.set_fontproperties(prop)
-        txt.set_verticalalignment('center_baseline')
-        txt.set_horizontalalignment('center')
-        
-        cell.set_height(1.0 / num_rows)
-        
+        cell.get_text().set_fontproperties(prop)
         if r in h_idx:
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
+            txt = cell.get_text(); txt.set_color('black')
+            txt.set_fontsize(24); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
-            
             if c == 0: cell.visible_edges = 'TLB'
             elif c == 6: cell.visible_edges = 'TRB'
             else: cell.visible_edges = 'TB'
-            
         elif (r-1) in h_idx:
-            cell.set_facecolor('#333333')
-            txt.set_color('white'); txt.set_fontsize(18)
-            
+            cell.set_facecolor('#333333'); cell.get_text().set_color('white'); cell.get_text().set_fontsize(16)
         elif master_rows[r] == [""] * 7:
             cell.set_height(0.01); cell.visible_edges = ''
-            
         else:
-            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white')
-            txt.set_fontsize(18)
-            txt.set_color('black')
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); cell.get_text().set_fontsize(15)
+    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
     t_img = Image.open(buf)
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
-    
-    # 【修正2】看板と表のセパレート値を 0.01 に設定して隙間を最小化
-    c_img = Image.new("RGBA", (t_img.width, int(b_img.height * 1.01) + t_img.height), (255, 255, 255, 255))
-    c_img.paste(b_img, (0, 0), b_img)
-    c_img.paste(t_img, (0, int(b_img.height * 1.01)), t_img)
-    
+    c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
+    c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, b_img.height), t_img)
     plt.close(fig); return c_img
 
-# --- UI構築開始 ---
 st.title("📊 優秀台レポート作成アプリ")
 if rename_dict: st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
 
@@ -195,11 +165,10 @@ if uploaded_file:
         try: df = pd.read_csv(uploaded_file, encoding='cp932')
         except: uploaded_file.seek(0); df = pd.read_csv(uploaded_file, encoding='utf-8')
         st.success("✅ CSVを読み込みました")
-        
-        col_m_name = next((c for c in df.columns if '機種名' in c), "機種名")
-        col_number = next((c for c in df.columns if '台番' in c), "台番")
-        col_diff = next((c for c in df.columns if '差枚' in c), "差枚")
-        machine_list = sorted(df[col_m_name].dropna().unique().tolist())
+        col_m_name = next((c for c in df.columns if '機種名' in c), None)
+        col_number = next((c for c in df.columns if '台番' in c), None)
+        col_diff = next((c for c in df.columns if '差枚' in c), None)
+        machine_list = sorted(df[col_m_name].unique().tolist())
 
         for sid in ["1", "2", "3", "4"]:
             s_ext = "" if sid == "1" else sid
@@ -254,11 +223,7 @@ if uploaded_file:
                                     master_rows.append([f"{dn} 優秀台"] * 7)
                                     master_rows.append(['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数'])
                                     for _, r in e_df.iterrows():
-                                        g_val = f"{int(r.get('G数', 0)):,}G" if 'G数' in df.columns else f"{int(r.iloc[2]):,}G"
-                                        bb_val = str(int(r.get('BB', 0))) if 'BB' in df.columns else str(int(r.iloc[3]))
-                                        rb_val = str(int(r.get('RB', 0))) if 'RB' in df.columns else str(int(r.iloc[4]))
-                                        at_val = str(int(r.get('ART', 0))) if 'ART' in df.columns else str(int(r.iloc[5]))
-                                        master_rows.append([str(int(r[col_number])), dn, g_val, bb_val, rb_val, at_val, f"+{int(r[col_diff]):,}枚"])
+                                        master_rows.append([str(int(r[col_number])), dn, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
                                     master_rows.append([""] * 7)
                             if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], s_ext)
             
@@ -270,13 +235,10 @@ if uploaded_file:
                     h_idx = [0]
                     for _, r in top10_df.iterrows():
                         renamed_m4 = apply_rename(str(r[col_m_name]))
-                        g_val = f"{int(r.get('G数', 0)):,}G" if 'G数' in df.columns else "0G"
-                        bb_val = str(int(r.get('BB', 0))) if 'BB' in df.columns else "0"
-                        rb_val = str(int(r.get('RB', 0))) if 'RB' in df.columns else "0"
-                        at_val = str(int(r.get('ART', 0))) if 'ART' in df.columns else "0"
-                        master_rows.append([str(int(r[col_number])), renamed_m4, g_val, bb_val, rb_val, at_val, f"+{int(r[col_diff]):,}枚"])
+                        master_rows.append([str(int(r[col_number])), renamed_m4, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
                     st.session_state.report_img4 = draw_table_image(master_rows, h_idx, st.session_state.bg_color4, st.session_state.it4, "4")
 
+            # 画像のプレビューと管理エリア
             if st.session_state[f'report_img{sid}']:
                 st.image(st.session_state[f'report_img{sid}'])
                 c_img_dl, c_img_cl = st.columns(2)
