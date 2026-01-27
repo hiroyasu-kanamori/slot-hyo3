@@ -27,7 +27,7 @@ font_p = get_font_path()
 prop = fm.FontProperties(fname=font_p) if font_p else fm.FontProperties()
 
 # ==========================================
-# 機種名置換辞書の読み込み
+# 機種名置換辞書
 # ==========================================
 RENAME_FILE = "rename_list.csv"
 
@@ -51,7 +51,7 @@ def apply_rename(name):
     return rename_dict.get(name, name)
 
 # ==========================================
-# 永続保存用ファイル入出力関数
+# ファイル入出力
 # ==========================================
 def save_text_to_file(text, filename):
     with open(filename, "w", encoding="utf-8") as f:
@@ -107,7 +107,7 @@ def update_display_name(sid, i):
     selected_machine = st.session_state[f"m{sid}_{i}"]
     st.session_state[f"d{sid}_{i}"] = apply_rename(selected_machine)
 
-# --- 看板作成関数 ---
+# --- 看板作成 ---
 def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_width, width):
     height = banner_height
     radius = 45 
@@ -124,16 +124,15 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
     draw.text((pos_x, pos_y), text, fill="white", font=font, stroke_width=stroke_width)
     return image
 
-# --- レポート生成用描画関数 (A案：隙間ゼロ修正版) ---
+# --- レポート生成用描画関数 (B案：物理オーバーラップ版) ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     row_h_inch = 0.85
     num_rows = len(master_rows)
     fig, ax = plt.subplots(figsize=(14, num_rows * row_h_inch))
     
-    # 【3つのゼロ設定：その1】描画エリアの余白を完全排除
+    # 余白設定も念のため維持
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.axis('off')
-    # 【3つのゼロ設定：その2】軸の範囲を画像サイズいっぱいに広げる
     ax.set_position([0, 0, 1, 1])
     
     table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
@@ -166,20 +165,27 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(24)
             
     buf = io.BytesIO()
-    # 【3つのゼロ設定：その3】pad_inches=0 を指定して保存
     plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
     t_img = Image.open(buf)
     
+    # 看板の作成
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
     
-    # 看板と表を合成（看板の高さぴったりに表を配置）
-    c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
+    # 【B案：物理的に2px重ねる修正】
+    overlap = 2 # ここで重ねる量を指定
+    
+    # キャンバスサイズを重ねる分だけ少し短くする
+    combined_height = b_img.height + t_img.height - overlap
+    c_img = Image.new("RGBA", (t_img.width, combined_height), (255, 255, 255, 255))
+    
+    # 1. 看板を先に貼る
     c_img.paste(b_img, (0, 0), b_img)
-    c_img.paste(t_img, (0, b_img.height), t_img)
+    # 2. 表を「看板の底辺 - overlap」の位置に貼る（看板の下に表が潜り込む形）
+    c_img.paste(t_img, (0, b_img.height - overlap), t_img)
     
     plt.close(fig); return c_img
 
-# --- UI構築 (以下は以前のまま維持) ---
+# --- UI構築 (変更なし) ---
 st.title("📊 優秀台レポート作成アプリ")
 if rename_dict: st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
 
