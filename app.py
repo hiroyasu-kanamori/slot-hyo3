@@ -126,15 +126,28 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
 
 # --- レポート生成用描画関数 ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    fig, ax = plt.subplots(figsize=(14, len(master_rows) * 0.6))
+    # 行の高さを0.85インチに固定するための計算
+    row_height_inch = 0.85
+    num_rows = len(master_rows)
+    fig, ax = plt.subplots(figsize=(14, num_rows * row_height_inch))
     ax.axis('off')
+    
     table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
-    table.auto_set_font_size(False); table.scale(1.0, 3.5)
+    
+    # 修正ポイント：自動フォント調整をオフにし、高さを1行あたりの割合にする
+    table.auto_set_font_size(False)
+    
     for (r, c), cell in table.get_celld().items():
-        cell.get_text().set_fontproperties(prop)
+        cell.set_height(1.0 / num_rows)
+        txt = cell.get_text()
+        txt.set_fontproperties(prop)
+        
+        # 修正ポイント：垂直方向の完全センター配置
+        txt.set_verticalalignment('center_baseline')
+        
         if r in h_idx:
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt = cell.get_text(); txt.set_color('black')
+            txt.set_color('black')
             txt.set_fontsize(24); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
@@ -142,11 +155,14 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             elif c == 6: cell.visible_edges = 'TRB'
             else: cell.visible_edges = 'TB'
         elif (r-1) in h_idx:
-            cell.set_facecolor('#333333'); cell.get_text().set_color('white'); cell.get_text().set_fontsize(16)
+            # 修正ポイント：項目名ヘッダーのフォントサイズ固定
+            cell.set_facecolor('#333333'); txt.set_color('white'); txt.set_fontsize(18)
         elif master_rows[r] == [""] * 7:
             cell.set_height(0.01); cell.visible_edges = ''
         else:
-            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); cell.get_text().set_fontsize(15)
+            # 修正ポイント：データ行のフォントサイズを18に固定
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(18)
+            
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
     t_img = Image.open(buf)
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
@@ -238,7 +254,6 @@ if uploaded_file:
                         master_rows.append([str(int(r[col_number])), renamed_m4, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
                     st.session_state.report_img4 = draw_table_image(master_rows, h_idx, st.session_state.bg_color4, st.session_state.it4, "4")
 
-            # 画像のプレビューと管理エリア
             if st.session_state[f'report_img{sid}']:
                 st.image(st.session_state[f'report_img{sid}'])
                 c_img_dl, c_img_cl = st.columns(2)
