@@ -161,7 +161,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             cell.set_height(0.01); cell.visible_edges = ''
         else:
             # 修正ポイント：データ行のフォントサイズを18に固定
-            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(18)
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(20)
             
     buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
     t_img = Image.open(buf)
