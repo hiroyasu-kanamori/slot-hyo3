@@ -51,7 +51,7 @@ def apply_rename(name):
     return rename_dict.get(name, name)
 
 # ==========================================
-# 永続保存用ファイル入出力関数
+# 永続保存用ファイル入出力
 # ==========================================
 def save_text_to_file(text, filename):
     with open(filename, "w", encoding="utf-8") as f:
@@ -97,7 +97,8 @@ for sid, cfg in FILES.items():
         st.session_state[f'targets{sid}'] = load_targets_from_file(cfg["csv"])
     if f'report_img{sid}' not in st.session_state: st.session_state[f'report_img{sid}'] = None
     
-    design_defaults = {'b_height': 100, 'f_size': 50, 'y_adj': -12, 'thickness': 1}
+    # 【UI追加用】初期値にテーブル用フォントサイズを追加
+    design_defaults = {'b_height': 100, 'f_size': 50, 'y_adj': -12, 'thickness': 1, 'table_fs': 18}
     for key, val in design_defaults.items():
         full_key = f"{key}{s_ext}"
         if full_key not in st.session_state:
@@ -107,7 +108,7 @@ def update_display_name(sid, i):
     selected_machine = st.session_state[f"m{sid}_{i}"]
     st.session_state[f"d{sid}_{i}"] = apply_rename(selected_machine)
 
-# --- 看板作成関数 ---
+# --- 看板作成 ---
 def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_width, width):
     height = banner_height
     radius = 45 
@@ -124,72 +125,57 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
     draw.text((pos_x, pos_y), text, fill="white", font=font, stroke_width=stroke_width)
     return image
 
-# --- レポート生成用描画関数 (鉄則の修正箇所) ---
-def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    # 行の高さを0.85インチに固定
-    row_h_inch = 0.85
+# --- レポート生成用描画関数 ---
+def draw_table_image(master_rows, h_idx, color, b_text, suffix, table_font_size):
+    # 行の高さ調整。文字が大きくなってもいいように少しマージンを持たせます。
+    row_h_inch = (table_font_size / 18) * 0.85
     num_rows = len(master_rows)
     fig, ax = plt.subplots(figsize=(14, num_rows * row_h_inch))
     
-    # 看板との隙間を消すために余白をゼロに調整
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.axis('off')
     
     table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
-    
-    # 修正ポイント：自動フォント調整をオフ
     table.auto_set_font_size(False)
     
     for (r, c), cell in table.get_celld().items():
-        # セルの高さを均等に配分
         cell.set_height(1.0 / num_rows)
         txt = cell.get_text()
         txt.set_fontproperties(prop)
-        
-        # 修正ポイント：垂直方向の完全センター配置 (baselineを中央に)
         txt.set_verticalalignment('center_baseline')
-        txt.set_horizontalalignment('center')
         
         if r in h_idx:
-            # 優秀台ヘッダー
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
+            txt.set_color('black')
+            # 優秀台タイトルのサイズもスライダーに連動（基本はスライダー値の1.3倍程度）
+            txt.set_fontsize(table_font_size * 1.3); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
-            
             if c == 0: cell.visible_edges = 'TLB'
             elif c == 6: cell.visible_edges = 'TRB'
             else: cell.visible_edges = 'TB'
-            
         elif (r-1) in h_idx:
-            # 項目見出し (修正：18固定)
-            cell.set_facecolor('#333333'); txt.set_color('white'); txt.set_fontsize(18)
-            
+            # 項目見出し
+            cell.set_facecolor('#333333'); txt.set_color('white')
+            txt.set_fontsize(table_font_size)
         elif master_rows[r] == [""] * 7:
-            # 空行
             cell.set_height(0.01); cell.visible_edges = ''
-            
         else:
-            # データ行 (修正：18固定)
-            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(18)
+            # データ行
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white')
+            txt.set_fontsize(table_font_size) # 【UI連動箇所】
             
-    # 保存時に余白(pad_inches)を完全に消すことで看板と密着させる
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
     t_img = Image.open(buf)
-    
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
-    
-    # 看板と表を合成 (セパレート値0.0で連結)
     c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
-    c_img.paste(b_img, (0, 0), b_img)
-    c_img.paste(t_img, (0, b_img.height), t_img)
-    
+    c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, b_img.height), t_img)
     plt.close(fig); return c_img
 
-# --- UI以降は元のロジックを維持 ---
+# --- メインUI ---
 st.title("📊 優秀台レポート作成アプリ")
-if rename_dict: st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
+if rename_dict: st.caption(f"ℹ️ 機種名置換辞書適用中")
 
 st.header("STEP 1: CSVデータの読み込み")
 uploaded_file = st.file_uploader("CSVファイルをアップロードしてください", type=['csv'])
@@ -208,8 +194,7 @@ if uploaded_file:
             s_ext = "" if sid == "1" else sid
             cfg = FILES[sid]
             st.divider()
-            icons = {"1": "🔴", "2": "🔵", "3": "🟢", "4": "⚫"}
-            st.header(f"{icons[sid]} レポート {sid}")
+            st.header(f"レポート {sid}")
             
             c_text, c_btn = st.columns([4, 1])
             with c_text: st.text_input(f"看板{sid}のテキスト", value=st.session_state[f'it{sid}'], key=f"it{sid}", disabled=not st.session_state[f'edit_mode{sid}'])
@@ -219,68 +204,60 @@ if uploaded_file:
                     if st.session_state[f'edit_mode{sid}']: save_text_to_file(st.session_state[f'it{sid}'], cfg["txt"])
                     st.session_state[f'edit_mode{sid}'] = not st.session_state[f'edit_mode{sid}']; st.rerun()
 
+            # デザイン微調整ポップオーバーの中に「表の文字サイズ」を追加
             with st.popover(f"⚙️ デザイン微調整"):
                 st.session_state[f'bg_color{sid}'] = st.color_picker("背景色", st.session_state[f'bg_color{sid}'], key=f"cp{sid}")
-                st.slider("縦幅", 50, 400, value=st.session_state[f'b_height{s_ext}'], key=f"b_height{s_ext}")
-                st.slider("サイズ", 10, 200, value=st.session_state[f'f_size{s_ext}'], key=f"f_size{s_ext}")
-                st.slider("位置", -100, 100, value=st.session_state[f'y_adj{s_ext}'], key=f"y_adj{s_ext}")
-                st.slider("太さ", 0, 10, value=st.session_state[f'thickness{s_ext}'], key=f"thickness{s_ext}")
+                st.slider("看板 縦幅", 50, 400, value=st.session_state[f'b_height{s_ext}'], key=f"b_height{s_ext}")
+                st.slider("看板 文字サイズ", 10, 200, value=st.session_state[f'f_size{s_ext}'], key=f"f_size{s_ext}")
+                # 【新規追加】表の文字サイズスライダー
+                st.slider("表の文字サイズ", 10, 60, value=st.session_state[f'table_fs{s_ext}'], key=f"table_fs{s_ext}")
+                st.slider("看板 文字位置", -100, 100, value=st.session_state[f'y_adj{s_ext}'], key=f"y_adj{s_ext}")
+                st.slider("看板 文字太さ", 0, 10, value=st.session_state[f'thickness{s_ext}'], key=f"thickness{s_ext}")
             
             st.image(create_banner(st.session_state[f'it{sid}'], st.session_state[f'bg_color{sid}'], st.session_state[f'b_height{s_ext}'], st.session_state[f'f_size{s_ext}'], st.session_state[f'y_adj{s_ext}'], st.session_state[f'thickness{s_ext}'], 800), use_container_width=True)
 
             if sid != "4":
-                st.subheader(f"対象機種の管理")
+                # リストへの登録・生成ロジック
                 with st.popover(f"➕ 機種を追加"):
                     new_ts = []
                     for i in range(1, 4):
                         m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}", on_change=update_display_name, args=(sid, i))
-                        if f"d{sid}_{i}" not in st.session_state: st.session_state[f"d{sid}_{i}"] = ""
                         d = st.text_input(f"表示名 {i}", key=f"d{sid}_{i}")
                         t = st.number_input(f"枚数 {i}", value=1000, step=100, key=f"t{sid}_{i}")
                         if m != "-- 選択 --": new_ts.append((m, d if d else apply_rename(m), t))
-                    if st.button(f"🚀 リストに登録", key=f"btn{sid}"):
+                    if st.button(f"🚀 登録", key=f"btn{sid}"):
                         st.session_state[f'targets{sid}'].extend(new_ts); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
 
                 if st.session_state[f'targets{sid}']:
-                    for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn} ({t}枚以上)")
-                    c_cl, c_ge = st.columns(2)
-                    with c_cl: 
-                        if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"): st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
-                    with c_ge:
-                        if st.button(f"🔥 レポート画像を生成", key=f"gen{sid}"):
-                            master_rows, h_idx = [], []
-                            for cn, dn, thr in st.session_state[f'targets{sid}']:
-                                m_df = df[df[col_m_name] == cn].copy()
-                                e_df = m_df[m_df[col_diff] >= thr].copy().sort_values(col_number)
-                                if not e_df.empty:
-                                    h_idx.append(len(master_rows))
-                                    master_rows.append([f"{dn} 優秀台"] * 7)
-                                    master_rows.append(['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数'])
-                                    for _, r in e_df.iterrows():
-                                        master_rows.append([str(int(r[col_number])), dn, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
-                                    master_rows.append([""] * 7)
-                            if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], s_ext)
+                    if st.button(f"🔥 生成", key=f"gen{sid}"):
+                        master_rows, h_idx = [], []
+                        for cn, dn, thr in st.session_state[f'targets{sid}']:
+                            m_df = df[df[col_m_name] == cn].copy()
+                            e_df = m_df[m_df[col_diff] >= thr].copy().sort_values(col_number)
+                            if not e_df.empty:
+                                h_idx.append(len(master_rows))
+                                master_rows.append([f"{dn} 優秀台"] * 7)
+                                master_rows.append(['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数'])
+                                for _, r in e_df.iterrows():
+                                    master_rows.append([str(int(r[col_number])), dn, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
+                                master_rows.append([""] * 7)
+                        if master_rows: 
+                            # ここでスライダーの値を関数に渡します
+                            st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], s_ext, st.session_state[f'table_fs{s_ext}'])
             
             else: # レポート4
-                st.subheader("差枚数上位10台を自動抽出")
-                if st.button("🔥 TOP10レポートを生成", key="gen4"):
+                if st.button("🔥 生成 (TOP10)", key="gen4"):
                     top10_df = df.sort_values(by=col_diff, ascending=False).head(10).copy()
                     master_rows = [[f"{st.session_state.it4}"] * 7, ['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数']]
                     h_idx = [0]
                     for _, r in top10_df.iterrows():
                         renamed_m4 = apply_rename(str(r[col_m_name]))
                         master_rows.append([str(int(r[col_number])), renamed_m4, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
-                    st.session_state.report_img4 = draw_table_image(master_rows, h_idx, st.session_state.bg_color4, st.session_state.it4, "4")
+                    st.session_state.report_img4 = draw_table_image(master_rows, h_idx, st.session_state.bg_color4, st.session_state.it4, "4", st.session_state.table_fs4)
 
             if st.session_state[f'report_img{sid}']:
                 st.image(st.session_state[f'report_img{sid}'])
-                c_img_dl, c_img_cl = st.columns(2)
-                with c_img_dl:
-                    out = io.BytesIO(); st.session_state[f'report_img{sid}'].convert("RGB").save(out, format="JPEG", quality=95)
-                    st.download_button(f"✅ 画像を保存", out.getvalue(), f"report{sid}.jpg", "image/jpeg", key=f"dl{sid}")
-                with c_img_cl:
-                    if st.button(f"🗑️ 画像をクリア", key=f"img_clear{sid}"):
-                        st.session_state[f'report_img{sid}'] = None
-                        st.rerun()
+                out = io.BytesIO(); st.session_state[f'report_img{sid}'].convert("RGB").save(out, format="JPEG", quality=95)
+                st.download_button(f"✅ 保存", out.getvalue(), f"report{sid}.jpg", "image/jpeg", key=f"dl{sid}")
 
     except Exception as e: st.error(f"エラー: {e}")
