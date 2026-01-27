@@ -124,52 +124,70 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
     draw.text((pos_x, pos_y), text, fill="white", font=font, stroke_width=stroke_width)
     return image
 
-# --- レポート生成用描画関数 ---
+# --- レポート生成用描画関数 (鉄則の修正箇所) ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    # 行の高さを0.85インチに固定するための計算
-    row_height_inch = 0.85
+    # 行の高さを0.85インチに固定
+    row_h_inch = 0.85
     num_rows = len(master_rows)
-    fig, ax = plt.subplots(figsize=(14, num_rows * row_height_inch))
+    fig, ax = plt.subplots(figsize=(14, num_rows * row_h_inch))
+    
+    # 看板との隙間を消すために余白をゼロに調整
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.axis('off')
     
     table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
     
-    # 修正ポイント：自動フォント調整をオフにし、高さを1行あたりの割合にする
+    # 修正ポイント：自動フォント調整をオフ
     table.auto_set_font_size(False)
     
     for (r, c), cell in table.get_celld().items():
+        # セルの高さを均等に配分
         cell.set_height(1.0 / num_rows)
         txt = cell.get_text()
         txt.set_fontproperties(prop)
         
-        # 修正ポイント：垂直方向の完全センター配置
+        # 修正ポイント：垂直方向の完全センター配置 (baselineを中央に)
         txt.set_verticalalignment('center_baseline')
+        txt.set_horizontalalignment('center')
         
         if r in h_idx:
+            # 優秀台ヘッダー
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt.set_color('black')
-            txt.set_fontsize(24); txt.set_weight('bold')
+            txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
+            
             if c == 0: cell.visible_edges = 'TLB'
             elif c == 6: cell.visible_edges = 'TRB'
             else: cell.visible_edges = 'TB'
+            
         elif (r-1) in h_idx:
-            # 修正ポイント：項目名ヘッダーのフォントサイズ固定
+            # 項目見出し (修正：18固定)
             cell.set_facecolor('#333333'); txt.set_color('white'); txt.set_fontsize(18)
+            
         elif master_rows[r] == [""] * 7:
+            # 空行
             cell.set_height(0.01); cell.visible_edges = ''
+            
         else:
-            # 修正ポイント：データ行のフォントサイズを18に固定
+            # データ行 (修正：18固定)
             cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(18)
             
-    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
+    # 保存時に余白(pad_inches)を完全に消すことで看板と密着させる
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
     t_img = Image.open(buf)
+    
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
+    
+    # 看板と表を合成 (セパレート値0.0で連結)
     c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
-    c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, b_img.height), t_img)
+    c_img.paste(b_img, (0, 0), b_img)
+    c_img.paste(t_img, (0, b_img.height), t_img)
+    
     plt.close(fig); return c_img
 
+# --- UI以降は元のロジックを維持 ---
 st.title("📊 優秀台レポート作成アプリ")
 if rename_dict: st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
 
