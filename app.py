@@ -126,7 +126,6 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
 
 # --- レポート生成用描画関数 ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    # 行の高さを0.85インチに固定するための計算
     row_height_inch = 0.85
     num_rows = len(master_rows)
     fig, ax = plt.subplots(figsize=(14, num_rows * row_height_inch))
@@ -134,15 +133,12 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     
     table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
     
-    # 修正ポイント：自動フォント調整をオフにし、高さを1行あたりの割合にする
     table.auto_set_font_size(False)
     
     for (r, c), cell in table.get_celld().items():
         cell.set_height(1.0 / num_rows)
         txt = cell.get_text()
         txt.set_fontproperties(prop)
-        
-        # 修正ポイント：垂直方向の完全センター配置
         txt.set_verticalalignment('center_baseline')
         
         if r in h_idx:
@@ -155,19 +151,21 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             elif c == 6: cell.visible_edges = 'TRB'
             else: cell.visible_edges = 'TB'
         elif (r-1) in h_idx:
-            # 修正ポイント：項目名ヘッダーのフォントサイズ固定
             cell.set_facecolor('#333333'); txt.set_color('white'); txt.set_fontsize(18)
         elif master_rows[r] == [""] * 7:
             cell.set_height(0.01); cell.visible_edges = ''
         else:
-            # 修正ポイント：データ行のフォントサイズを18に固定
-            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(20)
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(18)
             
-    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, transparent=True)
+    # 【修正ポイント1】pad_inches=0 にしてMatplotlib側の余白を完全に消去
+    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
     t_img = Image.open(buf)
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
-    c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
-    c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, b_img.height), t_img)
+    
+    # 【修正ポイント2】セパレート値を 0.01 に固定して連結
+    sep = 0.01
+    c_img = Image.new("RGBA", (t_img.width, int(b_img.height + sep) + t_img.height), (255, 255, 255, 255))
+    c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, int(b_img.height + sep)), t_img)
     plt.close(fig); return c_img
 
 st.title("📊 優秀台レポート作成アプリ")
