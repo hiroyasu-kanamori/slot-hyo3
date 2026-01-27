@@ -129,10 +129,13 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     row_height_inch = 0.85
     num_rows = len(master_rows)
     fig, ax = plt.subplots(figsize=(14, num_rows * row_height_inch))
+    
+    # 【修正ポイント1】余白を強制的にゼロにする
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.axis('off')
+    ax.set_position([0, 0, 1, 1]) # プロットエリアを画像全体に広げる
     
     table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
-    
     table.auto_set_font_size(False)
     
     for (r, c), cell in table.get_celld().items():
@@ -143,8 +146,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         
         if r in h_idx:
             cell.set_facecolor(color); cell.set_edgecolor(color)
-            txt.set_color('black')
-            txt.set_fontsize(24); txt.set_weight('bold')
+            txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
             if c == 3: txt.set_text(master_rows[r][0])
             else: txt.set_text("")
             if c == 0: cell.visible_edges = 'TLB'
@@ -157,17 +159,22 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         else:
             cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(18)
             
-    # 【修正ポイント1】pad_inches=0 にしてMatplotlib側の余白を完全に消去
-    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
+    buf = io.BytesIO()
+    # 【修正ポイント2】pad_inchesを0にし、余白計算を完全に無効化
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
     t_img = Image.open(buf)
+    
+    # 看板の作成
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
     
-    # 【修正ポイント2】セパレート値を 0.01 に固定して連結
-    sep = 0.01
-    c_img = Image.new("RGBA", (t_img.width, int(b_img.height + sep) + t_img.height), (255, 255, 255, 255))
-    c_img.paste(b_img, (0, 0), b_img); c_img.paste(t_img, (0, int(b_img.height + sep)), t_img)
+    # 【修正ポイント3】セパレートを「完全に0」にして合成
+    c_img = Image.new("RGBA", (t_img.width, b_img.height + t_img.height), (255, 255, 255, 255))
+    c_img.paste(b_img, (0, 0), b_img)
+    c_img.paste(t_img, (0, b_img.height), t_img)
+    
     plt.close(fig); return c_img
 
+# --- UI以降は変更なし ---
 st.title("📊 優秀台レポート作成アプリ")
 if rename_dict: st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
 
@@ -225,7 +232,7 @@ if uploaded_file:
                     for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn} ({t}枚以上)")
                     c_cl, c_ge = st.columns(2)
                     with c_cl: 
-                        if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"): st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
+                        if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"): st.session_state[f'targets{sid}']= []; save_targets_to_file([], cfg["csv"]); st.rerun()
                     with c_ge:
                         if st.button(f"🔥 レポート画像を生成", key=f"gen{sid}"):
                             master_rows, h_idx = [], []
