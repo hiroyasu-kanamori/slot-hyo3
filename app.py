@@ -126,7 +126,7 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
 
 # --- レポート生成用描画関数 (B案：物理オーバーラップ版) ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    row_h_inch = 1.0
+    row_h_inch = 0.60
     num_rows = len(master_rows)
     fig, ax = plt.subplots(figsize=(14, num_rows * row_h_inch))
     
