@@ -171,7 +171,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             
         else:
             # データ行 (修正：18固定)
-            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(18)
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(24)
             
     # 保存時に余白(pad_inches)を完全に消すことで看板と密着させる
     buf = io.BytesIO()
