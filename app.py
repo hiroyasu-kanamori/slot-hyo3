@@ -126,7 +126,7 @@ def create_banner(text, bg_color, banner_height, font_size, y_offset, stroke_wid
 
 # --- レポート生成用描画関数 (B案：物理オーバーラップ版) ---
 def draw_table_image(master_rows, h_idx, color, b_text, suffix):
-    row_h_inch = 0.85
+    row_h_inch = 1.0
     num_rows = len(master_rows)
     fig, ax = plt.subplots(figsize=(14, num_rows * row_h_inch))
     
@@ -172,7 +172,7 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
     
     # 【B案：物理的に2px重ねる修正】
-    overlap = 100 # ここで重ねる量を指定
+    overlap = 4 # ここで重ねる量を指定
     
     # キャンバスサイズを重ねる分だけ少し短くする
     combined_height = b_img.height + t_img.height - overlap
