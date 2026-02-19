@@ -181,17 +181,14 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     # 看板の作成
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
     
-    # 【B案：物理的に2px重ねる修正】
-    overlap = 4 # ここで重ねる量を指定
-    
-    # キャンバスサイズを重ねる分だけ少し短くする
-    combined_height = b_img.height + t_img.height - overlap
+    # 看板と表の間の隙間（表のグループ区切り行と同程度）
+    gap = 25
+
+    combined_height = b_img.height + gap + t_img.height
     c_img = Image.new("RGBA", (t_img.width, combined_height), (255, 255, 255, 255))
-    
-    # 1. 看板を先に貼る
+
     c_img.paste(b_img, (0, 0), b_img)
-    # 2. 表を「看板の底辺 - overlap」の位置に貼る（看板の下に表が潜り込む形）
-    c_img.paste(t_img, (0, b_img.height - overlap), t_img)
+    c_img.paste(t_img, (0, b_img.height + gap), t_img)
     
     plt.close(fig); return c_img
 
