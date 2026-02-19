@@ -79,7 +79,7 @@ def load_targets_from_file(filename):
             return []
     return []
 
-SHIKAKE_FILE = "shikake_content4.json"
+SHIKAKE_FILE = "shikake_content3.json"
 
 def load_shikake_content():
     if os.path.exists(SHIKAKE_FILE):
@@ -102,13 +102,12 @@ def save_shikake_content(content_list):
 FILES = {
     "1": {"csv": "targets1_data.csv", "txt": "banner_text1.txt", "def_txt": "週間おススメ機種", "color": "#FF0000"},
     "2": {"csv": "targets2_data.csv", "txt": "banner_text2.txt", "def_txt": "月間おススメ機種", "color": "#007BFF"},
-    "3": {"csv": "targets3_data.csv", "txt": "banner_text3.txt", "def_txt": "1月の新台",       "color": "#28A745"},
-    "4": {"csv": "targets4_data.csv", "txt": "banner_text4.txt", "def_txt": "仕掛けレポート", "color": "#FF6600"},
+    "3": {"csv": "targets3_data.csv", "txt": "banner_text3.txt", "def_txt": "仕掛けレポート", "color": "#FF6600"},
+    "4": {"csv": "targets4_data.csv", "txt": "banner_text4.txt", "def_txt": "1月の新台",       "color": "#DC5DE0"},
     "5": {"csv": None,                "txt": "banner_text5.txt", "def_txt": "差玉TOP10",      "color": "#000000"}
 }
 
 for sid, cfg in FILES.items():
-    s_ext = "" if sid == "1" else sid
     if f'it{sid}' not in st.session_state:
         st.session_state[f'it{sid}'] = load_text_from_file(cfg["txt"], cfg["def_txt"])
     if f'edit_mode{sid}' not in st.session_state: st.session_state[f'edit_mode{sid}'] = False
@@ -117,20 +116,13 @@ for sid, cfg in FILES.items():
         st.session_state[f'targets{sid}'] = load_targets_from_file(cfg["csv"])
     if f'report_img{sid}' not in st.session_state: st.session_state[f'report_img{sid}'] = None
 
-    design_defaults = {'b_height': 100, 'f_size': 50, 'y_adj': -12, 'thickness': 1}
-    for key, val in design_defaults.items():
-        full_key = f"{key}{s_ext}"
-        if full_key not in st.session_state:
-            st.session_state[full_key] = val
-
 # 仕掛けの内容（永続化）
-if 'shikake_content4' not in st.session_state:
-    st.session_state['shikake_content4'] = load_shikake_content()
+if 'shikake_content3' not in st.session_state:
+    st.session_state['shikake_content3'] = load_shikake_content()
 # sc_j キーを初期化（text_input の初期値として使用）
 for j in range(7):
     if f'sc_{j}' not in st.session_state:
-        st.session_state[f'sc_{j}'] = st.session_state['shikake_content4'][j]
-# 台番 (sn_{j}_{k}) は number_input がデフォルト0で初期化するため明示的設定不要
+        st.session_state[f'sc_{j}'] = st.session_state['shikake_content3'][j]
 
 def update_display_name(sid, i):
     selected_machine = st.session_state[f"m{sid}_{i}"]
@@ -206,8 +198,8 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
         if first_row > 0:
             t_img = t_img.crop((0, first_row, t_img.width, t_img.height))
 
-    # 看板の作成
-    b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
+    # 看板の作成（固定値）
+    b_img = create_banner(b_text, color, 200, 100, -23, 2, t_img.width)
 
     # 看板と表の間の隙間（表のグループ区切り行と同程度）
     gap = 25
@@ -238,10 +230,9 @@ if uploaded_file:
         machine_list = sorted(df[col_m_name].unique().tolist())
 
         for sid in ["1", "2", "3", "4", "5"]:
-            s_ext = "" if sid == "1" else sid
             cfg = FILES[sid]
             st.divider()
-            icons = {"1": "🔴", "2": "🔵", "3": "🟢", "4": "🟡", "5": "⚫"}
+            icons = {"1": "🔴", "2": "🔵", "3": "🟡", "4": "🟣", "5": "⚫"}
             st.header(f"{icons[sid]} レポート {sid}")
 
             c_text, c_btn = st.columns([4, 1])
@@ -252,16 +243,15 @@ if uploaded_file:
                     if st.session_state[f'edit_mode{sid}']: save_text_to_file(st.session_state[f'it{sid}'], cfg["txt"])
                     st.session_state[f'edit_mode{sid}'] = not st.session_state[f'edit_mode{sid}']; st.rerun()
 
-            with st.popover(f"⚙️ デザイン微調整"):
-                st.session_state[f'bg_color{sid}'] = st.color_picker("背景色", st.session_state[f'bg_color{sid}'], key=f"cp{sid}")
-                st.slider("縦幅", 50, 400, value=st.session_state[f'b_height{s_ext}'], key=f"b_height{s_ext}")
-                st.slider("サイズ", 10, 200, value=st.session_state[f'f_size{s_ext}'], key=f"f_size{s_ext}")
-                st.slider("位置", -100, 100, value=st.session_state[f'y_adj{s_ext}'], key=f"y_adj{s_ext}")
-                st.slider("太さ", 0, 10, value=st.session_state[f'thickness{s_ext}'], key=f"thickness{s_ext}")
+            if sid != "4":
+                with st.popover("🎨 背景色"):
+                    st.session_state[f'bg_color{sid}'] = st.color_picker(
+                        "背景色", st.session_state[f'bg_color{sid}'], key=f"cp{sid}")
 
-            st.image(create_banner(st.session_state[f'it{sid}'], st.session_state[f'bg_color{sid}'], st.session_state[f'b_height{s_ext}'], st.session_state[f'f_size{s_ext}'], st.session_state[f'y_adj{s_ext}'], st.session_state[f'thickness{s_ext}'], 800), use_container_width=True)
+            st.image(create_banner(st.session_state[f'it{sid}'], st.session_state[f'bg_color{sid}'],
+                                    200, 100, -23, 2, 800), use_container_width=True)
 
-            if sid in ["1", "2", "3"]:
+            if sid in ["1", "2", "4"]:
                 st.subheader(f"対象機種の管理")
                 with st.popover(f"➕ 機種を追加"):
                     new_ts = []
@@ -292,25 +282,25 @@ if uploaded_file:
                                     for _, r in e_df.iterrows():
                                         master_rows.append([str(int(r[col_number])), dn, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
                                     master_rows.append([""] * 7)
-                            if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], s_ext)
+                            if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], sid)
 
-            elif sid == "4":
-                # === 新レポート4: 機種管理（閾値なし）+ 仕掛け ===
+            elif sid == "3":
+                # === レポート3: 仕掛けUI ===
                 st.subheader("対象機種の管理")
                 with st.popover("➕ 機種を追加"):
-                    new_ts4 = []
+                    new_ts3 = []
                     for i in range(1, 4):
-                        m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m4_{i}", on_change=update_display_name, args=("4", i))
-                        if f"d4_{i}" not in st.session_state: st.session_state[f"d4_{i}"] = ""
-                        d = st.text_input(f"表示名 {i}", key=f"d4_{i}")
-                        if m != "-- 選択 --": new_ts4.append((m, d if d else apply_rename(m), 0))
-                    if st.button("🚀 リストに登録", key="btn4"):
-                        st.session_state['targets4'].extend(new_ts4); save_targets_to_file(st.session_state['targets4'], cfg["csv"]); st.rerun()
+                        m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}", on_change=update_display_name, args=(sid, i))
+                        if f"d{sid}_{i}" not in st.session_state: st.session_state[f"d{sid}_{i}"] = ""
+                        d = st.text_input(f"表示名 {i}", key=f"d{sid}_{i}")
+                        if m != "-- 選択 --": new_ts3.append((m, d if d else apply_rename(m), 0))
+                    if st.button("🚀 リストに登録", key=f"btn{sid}"):
+                        st.session_state[f'targets{sid}'].extend(new_ts3); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
 
-                if st.session_state['targets4']:
-                    for i, (cn, dn, _) in enumerate(st.session_state['targets4']): st.write(f"{i+1}. {dn}")
-                    if st.button("🗑️ リストをクリア", key="clr4"):
-                        st.session_state['targets4'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
+                if st.session_state[f'targets{sid}']:
+                    for i, (cn, dn, _) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn}")
+                    if st.button("🗑️ リストをクリア", key=f"clr{sid}"):
+                        st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
 
                 st.subheader("対象機種の仕掛け")
                 with st.popover("🔧 仕掛けを追加"):
@@ -320,21 +310,22 @@ if uploaded_file:
                         cols = st.columns(5)
                         for k in range(10):
                             with cols[k % 5]:
-                                st.number_input(f"台番{k+1}", min_value=0, step=1, key=f"sn_{j}_{k}")
+                                st.number_input(f"台番{k+1}", min_value=0, step=1, value=None, key=f"sn_{j}_{k}")
                         st.divider()
-                    if st.button("💾 仕掛けの内容を保存", key="save_shikake4"):
+                    if st.button("💾 仕掛けの内容を保存", key="save_shikake3"):
                         content_list = [st.session_state.get(f"sc_{j}", "") for j in range(7)]
                         save_shikake_content(content_list)
-                        st.session_state['shikake_content4'] = content_list
+                        st.session_state['shikake_content3'] = content_list
                         st.rerun()
 
-                if st.button("🔥 レポートを生成", key="gen4"):
+                if st.button("🔥 レポートを生成", key=f"gen{sid}"):
                     master_rows, h_idx = [], []
                     for j in range(7):
                         content = st.session_state.get(f"sc_{j}", "")
                         numbers = [int(st.session_state[f"sn_{j}_{k}"])
                                    for k in range(10)
-                                   if int(st.session_state.get(f"sn_{j}_{k}", 0)) > 0]
+                                   if st.session_state.get(f"sn_{j}_{k}") is not None
+                                   and int(st.session_state[f"sn_{j}_{k}"]) > 0]
                         if not content or not numbers:
                             continue
                         m_df = df[df[col_number].isin(numbers)].copy().sort_values(col_number)
@@ -357,11 +348,11 @@ if uploaded_file:
                             ])
                         master_rows.append([""] * 7)
                     if master_rows:
-                        st.session_state['report_img4'] = draw_table_image(
-                            master_rows, h_idx, st.session_state['bg_color4'], st.session_state['it4'], "4")
+                        st.session_state[f'report_img{sid}'] = draw_table_image(
+                            master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], sid)
 
             elif sid == "5":
-                # 旧レポート4: 差枚数TOP10
+                # 差枚数TOP10
                 st.subheader("差枚数上位10台を自動抽出")
                 if st.button("🔥 TOP10レポートを生成", key="gen5"):
                     top10_df = df.sort_values(by=col_diff, ascending=False).head(10).copy()
