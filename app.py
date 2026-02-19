@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import os
 import urllib.request
+import numpy as np
 
 # --- ページ設定 ---
 st.set_page_config(page_title="スロット優秀台レポート作成", layout="centered")
@@ -166,7 +167,16 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
             
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
-    t_img = Image.open(buf)
+    t_img = Image.open(buf).convert('RGBA')
+
+    # 表上部の透明ピクセル行を自動削除
+    arr = np.array(t_img)
+    alpha = arr[:, :, 3]
+    non_empty_rows = np.where(np.any(alpha > 10, axis=1))[0]
+    if len(non_empty_rows) > 0:
+        first_row = non_empty_rows[0]
+        if first_row > 0:
+            t_img = t_img.crop((0, first_row, t_img.width, t_img.height))
     
     # 看板の作成
     b_img = create_banner(b_text, color, st.session_state[f'b_height{suffix}'], st.session_state[f'f_size{suffix}'], st.session_state[f'y_adj{suffix}'], st.session_state[f'thickness{suffix}'], t_img.width)
