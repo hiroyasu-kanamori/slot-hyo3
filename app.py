@@ -226,6 +226,76 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     plt.close(fig)
     return padded
 
+# --- 機種単体テーブル描画（バナーなし）---
+def draw_machine_table(rows, color):
+    h_idx = [0]
+    row_h_inch = 0.85
+    num_rows = len(rows)
+    fig, ax = plt.subplots(figsize=(14, num_rows * row_h_inch))
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    ax.axis('off')
+    ax.set_position([0, 0, 1, 1])
+    table = ax.table(cellText=rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
+    table.auto_set_font_size(False)
+    for (r, c), cell in table.get_celld().items():
+        cell.set_height(1.0 / num_rows)
+        txt = cell.get_text()
+        txt.set_fontproperties(prop)
+        txt.set_verticalalignment('center_baseline')
+        txt.set_horizontalalignment('center')
+        if r in h_idx:
+            cell.set_facecolor(color); cell.set_edgecolor(color)
+            txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
+            if c == 3: txt.set_text(rows[r][0])
+            else: txt.set_text("")
+            if c == 0: cell.visible_edges = 'TLB'
+            elif c == 6: cell.visible_edges = 'TRB'
+            else: cell.visible_edges = 'TB'
+        elif (r-1) in h_idx:
+            cell.set_facecolor('#333333'); txt.set_color('white'); txt.set_fontsize(18)
+        else:
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(24)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
+    t_img = Image.open(buf).convert('RGBA')
+    plt.close(fig)
+    arr = np.array(t_img)
+    non_empty = np.where(np.any(arr[:, :, 3] > 10, axis=1))[0]
+    if len(non_empty) > 0 and non_empty[0] > 0:
+        t_img = t_img.crop((0, non_empty[0], t_img.width, t_img.height))
+    return t_img
+
+# --- 機種画像付きレポート生成（レポート1/2/4用）---
+def draw_report_with_machine_images(machine_sections, color, b_text):
+    gap = 25
+    padding = 40
+    table_imgs = [draw_machine_table(rows, color) for _, rows in machine_sections]
+    canvas_w = max(t.width for t in table_imgs)
+    b_img = create_banner(b_text, color, 200, 100, -23, 2, canvas_w)
+    parts = [b_img]
+    for (dn, _), t_img in zip(machine_sections, table_imgs):
+        if t_img.width != canvas_w:
+            t_img = t_img.resize((canvas_w, int(t_img.height * canvas_w / t_img.width)), Image.LANCZOS)
+        jpg_path = f"{dn}.jpg"
+        if os.path.exists(jpg_path):
+            try:
+                raw = Image.open(jpg_path).convert("RGBA")
+                mach_img = raw.resize((canvas_w, int(raw.height * canvas_w / raw.width)), Image.LANCZOS)
+                parts.append(mach_img)
+            except:
+                pass
+        parts.append(t_img)
+    total_height = sum(p.height for p in parts) + gap * len(parts)
+    result = Image.new("RGBA", (canvas_w, total_height), (255, 255, 255, 255))
+    y = 0
+    for p in parts:
+        result.paste(p, (0, y), p)
+        y += p.height + gap
+    result = result.crop((0, 0, canvas_w, y - gap))
+    padded = Image.new("RGBA", (canvas_w + padding * 2, result.height + padding * 2), (255, 255, 255, 255))
+    padded.paste(result, (padding, padding))
+    return padded
+
 # --- UI構築 ---
 st.title("📊 優秀台レポート作成アプリ")
 if rename_dict: st.caption(f"ℹ️ 機種名置換辞書（{len(rename_dict)}件）適用中")
@@ -292,18 +362,19 @@ if uploaded_file:
                         if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"): st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
                     with c_ge:
                         if st.button(f"🔥 レポート画像を生成", key=f"gen{sid}"):
-                            master_rows, h_idx = [], []
+                            machine_sections = []
                             for cn, dn, thr in st.session_state[f'targets{sid}']:
                                 m_df = df[df[col_m_name] == cn].copy()
                                 e_df = m_df[m_df[col_diff] >= thr].copy().sort_values(col_number)
                                 if not e_df.empty:
-                                    h_idx.append(len(master_rows))
-                                    master_rows.append([f"{dn} 優秀台"] * 7)
-                                    master_rows.append(['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数'])
+                                    rows = [[f"{dn} 優秀台"] * 7,
+                                            ['台番', '機種名', 'ゲーム数', 'BIG', 'REG', 'AT', '差枚数']]
                                     for _, r in e_df.iterrows():
-                                        master_rows.append([str(int(r[col_number])), dn, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
-                                    master_rows.append([""] * 7)
-                            if master_rows: st.session_state[f'report_img{sid}'] = draw_table_image(master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], sid)
+                                        rows.append([str(int(r[col_number])), dn, f"{int(r.get('G数', 0)):,}G", str(int(r.get('BB', 0))), str(int(r.get('RB', 0))), str(int(r.get('ART', 0))), f"+{int(r[col_diff]):,}枚"])
+                                    machine_sections.append((dn, rows))
+                            if machine_sections:
+                                st.session_state[f'report_img{sid}'] = draw_report_with_machine_images(
+                                    machine_sections, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'])
 
             elif sid == "3":
                 # === レポート3: 仕掛けUI ===
