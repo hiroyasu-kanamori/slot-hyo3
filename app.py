@@ -98,58 +98,6 @@ def save_shikake_content(content_list):
     with open(SHIKAKE_FILE, "w", encoding="utf-8") as f:
         json.dump(content_list, f, ensure_ascii=False)
 
-@st.dialog("🔧 仕掛けを設定")
-def shikake_dialog():
-    components.html("""<script>
-(function() {
-    const doc = window.parent.document;
-    function addEnterHandlers() {
-        const inputs = doc.querySelectorAll('input[type="number"]');
-        inputs.forEach((input, index) => {
-            if (!input.dataset.enterHandled) {
-                input.dataset.enterHandled = 'true';
-                input.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        const all = doc.querySelectorAll('input[type="number"]');
-                        const idx = Array.from(all).indexOf(e.target);
-                        if (idx >= 0 && idx < all.length - 1) all[idx + 1].focus();
-                    }
-                });
-            }
-        });
-    }
-    const observer = new MutationObserver(addEnterHandlers);
-    observer.observe(doc.body, { childList: true, subtree: true });
-    addEnterHandlers();
-})();
-</script>""", height=0)
-    for j in range(7):
-        st.markdown(f"**仕掛け{j+1}**")
-        col_input, col_btn = st.columns([4, 1])
-        with col_input:
-            st.text_input("仕掛けの内容", key=f"sc_{j}")
-        with col_btn:
-            st.write("")
-            def make_clear(jj):
-                def clear_sc():
-                    st.session_state[f"sc_{jj}"] = ""
-                    current = list(st.session_state.get('shikake_content3', [''] * 7))
-                    current[jj] = ""
-                    save_shikake_content(current)
-                    st.session_state['shikake_content3'] = current
-                return clear_sc
-            st.button("🗑️ クリア", key=f"clear_sc_{j}", on_click=make_clear(j))
-        cols = st.columns(5)
-        for k in range(10):
-            with cols[k % 5]:
-                st.number_input(f"台番{k+1}", min_value=0, step=1, value=None, key=f"sn_{j}_{k}")
-        st.divider()
-    if st.button("💾 仕掛けの内容を保存", key="save_shikake3"):
-        content_list = [st.session_state.get(f"sc_{j}", "") for j in range(7)]
-        save_shikake_content(content_list)
-        st.session_state['shikake_content3'] = content_list
-        st.rerun()
 
 # ==========================================
 # セッション状態の初期化
@@ -178,6 +126,11 @@ if 'shikake_content3' not in st.session_state:
 for j in range(7):
     if f'sc_{j}' not in st.session_state:
         st.session_state[f'sc_{j}'] = st.session_state['shikake_content3'][j]
+# sn_j_k: セッション内のみ保持（起動時は常にNone）
+for j in range(7):
+    for k in range(10):
+        if f"sn_{j}_{k}" not in st.session_state:
+            st.session_state[f"sn_{j}_{k}"] = None
 
 def update_display_name(sid, i):
     selected_machine = st.session_state[f"m{sid}_{i}"]
@@ -289,6 +242,13 @@ if uploaded_file:
         col_number = next((c for c in df.columns if '台番' in c), None)
         col_diff = next((c for c in df.columns if '差枚' in c), None)
         machine_list = sorted(df[col_m_name].unique().tolist())
+        # 新しいCSVが来たら台番をリセット
+        _csv_name = uploaded_file.name
+        if st.session_state.get('_last_csv') != _csv_name:
+            for j in range(7):
+                for k in range(10):
+                    st.session_state[f"sn_{j}_{k}"] = None
+            st.session_state['_last_csv'] = _csv_name
 
         for sid in ["1", "2", "3", "4", "5"]:
             cfg = FILES[sid]
@@ -364,12 +324,69 @@ if uploaded_file:
                         st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
 
                 st.subheader("対象機種の仕掛け")
-                if st.button("🔧 仕掛けを追加", key="open_shikake_dialog"):
-                    shikake_dialog()
+                with st.expander("🔧 仕掛けを追加"):
+                    components.html("""<script>
+(function() {
+    const doc = window.parent.document;
+    function addEnterHandlers() {
+        const inputs = doc.querySelectorAll('input[type="number"]');
+        inputs.forEach((input) => {
+            if (!input.dataset.enterHandled) {
+                input.dataset.enterHandled = 'true';
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const all = doc.querySelectorAll('input[type="number"]');
+                        const idx = Array.from(all).indexOf(e.target);
+                        if (idx >= 0 && idx < all.length - 1) all[idx + 1].focus();
+                    }
+                });
+            }
+        });
+    }
+    const observer = new MutationObserver(addEnterHandlers);
+    observer.observe(doc.body, { childList: true, subtree: true });
+    addEnterHandlers();
+})();
+</script>""", height=0)
+                    for j in range(7):
+                        st.markdown(f"**仕掛け{j+1}**")
+                        col_input, col_btn = st.columns([4, 1])
+                        with col_input:
+                            st.text_input("仕掛けの内容", key=f"sc_{j}")
+                        with col_btn:
+                            st.write("")
+                            def make_clear(jj):
+                                def clear_sc():
+                                    st.session_state[f"sc_{jj}"] = ""
+                                    current = list(st.session_state.get('shikake_content3', [''] * 7))
+                                    current[jj] = ""
+                                    save_shikake_content(current)
+                                    st.session_state['shikake_content3'] = current
+                                return clear_sc
+                            st.button("🗑️ クリア", key=f"clear_sc_{j}", on_click=make_clear(j))
+                        row1 = st.columns(5)
+                        for k in range(5):
+                            with row1[k]:
+                                st.number_input(f"台番{k+1}", min_value=0, step=1, value=None, key=f"sn_{j}_{k}")
+                        row2 = st.columns(5)
+                        for k in range(5):
+                            with row2[k]:
+                                st.number_input(f"台番{k+6}", min_value=0, step=1, value=None, key=f"sn_{j}_{k+5}")
+                        st.divider()
+                    if st.button("💾 仕掛けの内容を保存", key="save_shikake3"):
+                        content_list = [st.session_state.get(f"sc_{j}", "") for j in range(7)]
+                        save_shikake_content(content_list)
+                        st.session_state['shikake_content3'] = content_list
+                        st.toast("保存しました！")
                 saved = st.session_state.get('shikake_content3', [''] * 7)
-                if any(saved):
-                    for j, c in enumerate(saved):
-                        if c: st.markdown(f"- 仕掛け{j+1}: {c}")
+                for j, c in enumerate(saved):
+                    if c:
+                        nums = [st.session_state.get(f"sn_{j}_{k}") for k in range(10)]
+                        nums = [n for n in nums if n is not None and int(n) > 0]
+                        if nums:
+                            num_str = "・".join(str(int(n)) for n in nums)
+                            st.markdown(f"- 仕掛け{j+1}: {c}　台番: {num_str}")
 
                 if st.button("🔥 レポートを生成", key=f"gen{sid}"):
                     master_rows, h_idx = [], []
