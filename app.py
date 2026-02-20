@@ -382,6 +382,7 @@ if uploaded_file:
                         if st.button(f"🔥 レポート画像を生成", key=f"gen{sid}"):
                             machine_sections = []
                             for cn, dn, thr in st.session_state[f'targets{sid}']:
+                                st.info(f"[DEBUG] cn={repr(cn)} / dn={repr(dn)} / img={repr(find_machine_image(dn))}")
                                 m_df = df[df[col_m_name] == cn].copy()
                                 e_df = m_df[m_df[col_diff] >= thr].copy().sort_values(col_number)
                                 if not e_df.empty:
