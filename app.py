@@ -100,16 +100,31 @@ def save_shikake_content(content_list):
     with open(SHIKAKE_FILE, "w", encoding="utf-8") as f:
         json.dump(content_list, f, ensure_ascii=False)
 
+def save_images_to_file(images_dict, filename):
+    data = {dn: base64.b64encode(b).decode() for dn, b in images_dict.items()}
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+def load_images_from_file(filename):
+    if os.path.exists(filename):
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return {dn: base64.b64decode(s) for dn, s in data.items()}
+        except:
+            pass
+    return {}
+
 
 # ==========================================
 # セッション状態の初期化
 # ==========================================
 FILES = {
-    "1": {"csv": "targets1_data.csv", "txt": "banner_text1.txt", "def_txt": "週間おススメ機種", "color": "#FF0000"},
-    "2": {"csv": "targets2_data.csv", "txt": "banner_text2.txt", "def_txt": "月間おススメ機種", "color": "#007BFF"},
-    "3": {"csv": "targets3_data.csv", "txt": "banner_text3.txt", "def_txt": "仕掛けレポート", "color": "#FF6600"},
-    "4": {"csv": "targets4_data.csv", "txt": "banner_text4.txt", "def_txt": "1月の新台",       "color": "#DC5DE0"},
-    "5": {"csv": None,                "txt": "banner_text5.txt", "def_txt": "差玉TOP10",      "color": "#000000"}
+    "1": {"csv": "targets1_data.csv", "txt": "banner_text1.txt", "def_txt": "週間おススメ機種", "color": "#FF0000", "img": "images1.json"},
+    "2": {"csv": "targets2_data.csv", "txt": "banner_text2.txt", "def_txt": "月間おススメ機種", "color": "#007BFF", "img": "images2.json"},
+    "3": {"csv": "targets3_data.csv", "txt": "banner_text3.txt", "def_txt": "仕掛けレポート",  "color": "#FF6600", "img": None},
+    "4": {"csv": "targets4_data.csv", "txt": "banner_text4.txt", "def_txt": "1月の新台",       "color": "#DC5DE0", "img": "images4.json"},
+    "5": {"csv": None,                "txt": "banner_text5.txt", "def_txt": "差玉TOP10",       "color": "#000000", "img": None}
 }
 
 for sid, cfg in FILES.items():
@@ -119,6 +134,8 @@ for sid, cfg in FILES.items():
     if f'bg_color{sid}' not in st.session_state: st.session_state[f'bg_color{sid}'] = cfg["color"]
     if cfg["csv"] and f'targets{sid}' not in st.session_state:
         st.session_state[f'targets{sid}'] = load_targets_from_file(cfg["csv"])
+    if cfg.get("img") and f'images{sid}' not in st.session_state:
+        st.session_state[f'images{sid}'] = load_images_from_file(cfg["img"])
     if f'report_img{sid}' not in st.session_state: st.session_state[f'report_img{sid}'] = None
 
 # 仕掛けの内容（永続化）
@@ -267,24 +284,8 @@ def draw_machine_table(rows, color):
         t_img = t_img.crop((0, non_empty[0], t_img.width, t_img.height))
     return t_img
 
-def find_machine_image(dn):
-    """display_name に対応する画像ファイルを探す。拡張子の揺れに対応。"""
-    import logging
-    log_path = os.path.join(BASE_DIR, "image_debug.log")
-    with open(log_path, "a", encoding="utf-8") as lf:
-        lf.write(f"find_machine_image called: dn={repr(dn)}\n")
-        for ext in [".jpg", ".jpg.jpg", ".JPG", ".jpeg", ".png"]:
-            p = os.path.join(BASE_DIR, f"{dn}{ext}")
-            exists = os.path.exists(p)
-            lf.write(f"  checking: {repr(p)} -> {exists}\n")
-            if exists:
-                lf.write(f"  FOUND: {p}\n")
-                return p
-        lf.write(f"  NOT FOUND for dn={repr(dn)}\n")
-    return None
-
 # --- 機種画像付きレポート生成（レポート1/2/4用）---
-def draw_report_with_machine_images(machine_sections, color, b_text):
+def draw_report_with_machine_images(machine_sections, color, b_text, images_dict=None):
     gap = 25
     padding = 40
     table_imgs = [draw_machine_table(rows, color) for _, rows in machine_sections]
@@ -294,10 +295,10 @@ def draw_report_with_machine_images(machine_sections, color, b_text):
     for (dn, _), t_img in zip(machine_sections, table_imgs):
         if t_img.width != canvas_w:
             t_img = t_img.resize((canvas_w, int(t_img.height * canvas_w / t_img.width)), Image.LANCZOS)
-        img_path = find_machine_image(dn)
-        if img_path:
+        img_bytes = (images_dict or {}).get(dn)
+        if img_bytes:
             try:
-                raw = Image.open(img_path).convert("RGBA")
+                raw = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
                 mach_img = raw.resize((canvas_w, int(raw.height * canvas_w / raw.width)), Image.LANCZOS)
                 parts.append(mach_img)
             except:
@@ -364,26 +365,41 @@ if uploaded_file:
                 st.subheader(f"対象機種の管理")
                 with st.popover(f"➕ 機種を追加"):
                     new_ts = []
+                    new_imgs = {}
                     for i in range(1, 4):
                         m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}", on_change=update_display_name, args=(sid, i))
                         if f"d{sid}_{i}" not in st.session_state: st.session_state[f"d{sid}_{i}"] = ""
                         d = st.text_input(f"表示名 {i}", key=f"d{sid}_{i}")
                         t = st.number_input(f"枚数 {i}", value=1000, step=100, key=f"t{sid}_{i}")
-                        if m != "-- 選択 --": new_ts.append((m, d if d else apply_rename(m), t))
+                        img_file = st.file_uploader(f"画像 {i}", type=["jpg","jpeg","png"], key=f"img{sid}_{i}")
+                        if m != "-- 選択 --":
+                            dn_val = d if d else apply_rename(m)
+                            new_ts.append((m, dn_val, t))
+                            if img_file:
+                                new_imgs[dn_val] = img_file.read()
+                        st.divider()
                     if st.button(f"🚀 リストに登録", key=f"btn{sid}"):
-                        st.session_state[f'targets{sid}'].extend(new_ts); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
+                        st.session_state[f'targets{sid}'].extend(new_ts)
+                        save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"])
+                        if new_imgs:
+                            st.session_state[f'images{sid}'].update(new_imgs)
+                            save_images_to_file(st.session_state[f'images{sid}'], cfg["img"])
+                        st.rerun()
 
                 if st.session_state[f'targets{sid}']:
                     for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn} ({t}枚以上)")
                     c_cl, c_ge = st.columns(2)
                     with c_cl:
-                        if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"): st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
+                        if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"):
+                            st.session_state[f'targets{sid}'] = []
+                            save_targets_to_file([], cfg["csv"])
+                            st.session_state[f'images{sid}'] = {}
+                            save_images_to_file({}, cfg["img"])
+                            st.rerun()
                     with c_ge:
                         if st.button(f"🔥 レポート画像を生成", key=f"gen{sid}"):
                             machine_sections = []
                             for cn, dn, thr in st.session_state[f'targets{sid}']:
-                                import os as _os; _files = _os.listdir(BASE_DIR)[:10]
-                                st.info(f"[DEBUG] BASE_DIR={BASE_DIR} / dn={repr(dn)} / img={repr(find_machine_image(dn))} / files={_files}")
                                 m_df = df[df[col_m_name] == cn].copy()
                                 e_df = m_df[m_df[col_diff] >= thr].copy().sort_values(col_number)
                                 if not e_df.empty:
@@ -394,7 +410,10 @@ if uploaded_file:
                                     machine_sections.append((dn, rows))
                             if machine_sections:
                                 st.session_state[f'report_img{sid}'] = draw_report_with_machine_images(
-                                    machine_sections, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'])
+                                    machine_sections,
+                                    st.session_state[f'bg_color{sid}'],
+                                    st.session_state[f'it{sid}'],
+                                    images_dict=st.session_state.get(f'images{sid}', {}))
 
             elif sid == "3":
                 # === レポート3: 仕掛けUI ===
