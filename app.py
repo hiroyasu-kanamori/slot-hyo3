@@ -16,6 +16,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # --- ページ設定 ---
 st.set_page_config(page_title="スロット優秀台レポート作成", layout="centered")
 
+st.markdown("""<style>
+[data-testid="stNumberInputStepDown"],
+[data-testid="stNumberInputStepUp"],
+[data-testid="stNumberInput"] button { display: none !important; }
+</style>""", unsafe_allow_html=True)
+
 # --- 日本語フォントのセットアップ ---
 @st.cache_data
 def get_font_path():
@@ -115,6 +121,21 @@ def load_images_from_file(filename):
             pass
     return {}
 
+def save_form_state(sid, data):
+    filename = f"form_state{sid}.json"
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+def load_form_state(sid):
+    filename = f"form_state{sid}.json"
+    if os.path.exists(filename):
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
 
 # ==========================================
 # セッション状態の初期化
@@ -122,7 +143,7 @@ def load_images_from_file(filename):
 FILES = {
     "1": {"csv": "targets1_data.csv", "txt": "banner_text1.txt", "def_txt": "週間おススメ機種", "color": "#FF0000", "img": "images1.json"},
     "2": {"csv": "targets2_data.csv", "txt": "banner_text2.txt", "def_txt": "月間おススメ機種", "color": "#007BFF", "img": "images2.json"},
-    "3": {"csv": "targets3_data.csv", "txt": "banner_text3.txt", "def_txt": "仕掛けレポート",  "color": "#FF6600", "img": None},
+    "3": {"csv": "targets3_data.csv", "txt": "banner_text3.txt", "def_txt": "仕掛けレポート",  "color": "#FF6600", "img": "images3.json"},
     "4": {"csv": "targets4_data.csv", "txt": "banner_text4.txt", "def_txt": "1月の新台",       "color": "#DC5DE0", "img": "images4.json"},
     "5": {"csv": None,                "txt": "banner_text5.txt", "def_txt": "差玉TOP10",       "color": "#000000", "img": None}
 }
@@ -137,6 +158,16 @@ for sid, cfg in FILES.items():
     if cfg.get("img") and f'images{sid}' not in st.session_state:
         st.session_state[f'images{sid}'] = load_images_from_file(cfg["img"])
     if f'report_img{sid}' not in st.session_state: st.session_state[f'report_img{sid}'] = None
+    if sid in ["1", "2", "3", "4"]:
+        fs = load_form_state(sid)
+        for i in range(1, 4):
+            slot = fs.get(str(i), {})
+            if f"m{sid}_{i}" not in st.session_state and "m" in slot:
+                st.session_state[f"m{sid}_{i}"] = slot["m"]
+            if f"d{sid}_{i}" not in st.session_state and "d" in slot:
+                st.session_state[f"d{sid}_{i}"] = slot["d"]
+            if f"t{sid}_{i}" not in st.session_state and "t" in slot:
+                st.session_state[f"t{sid}_{i}"] = slot["t"]
 
 # 仕掛けの内容（永続化）
 if 'shikake_content3' not in st.session_state:
@@ -244,6 +275,46 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     padded.paste(c_img, (padding, padding))
     plt.close(fig)
     return padded
+
+# --- 仕掛けテーブルのみ描画（バナーなし・パディングなし）---
+def draw_shikake_table_only(master_rows, h_idx, color):
+    row_h_inch = 0.85
+    num_rows = len(master_rows)
+    fig, ax = plt.subplots(figsize=(14, num_rows * row_h_inch))
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    ax.axis('off')
+    ax.set_position([0, 0, 1, 1])
+    table = ax.table(cellText=master_rows, colWidths=[0.1, 0.2, 0.15, 0.1, 0.1, 0.1, 0.25], loc='center', cellLoc='center')
+    table.auto_set_font_size(False)
+    for (r, c), cell in table.get_celld().items():
+        cell.set_height(1.0 / num_rows)
+        txt = cell.get_text()
+        txt.set_fontproperties(prop)
+        txt.set_verticalalignment('center_baseline')
+        txt.set_horizontalalignment('center')
+        if r in h_idx:
+            cell.set_facecolor(color); cell.set_edgecolor(color)
+            txt.set_color('black'); txt.set_fontsize(24); txt.set_weight('bold')
+            if c == 3: txt.set_text(master_rows[r][0])
+            else: txt.set_text("")
+            if c == 0: cell.visible_edges = 'TLB'
+            elif c == 6: cell.visible_edges = 'TRB'
+            else: cell.visible_edges = 'TB'
+        elif (r-1) in h_idx:
+            cell.set_facecolor('#333333'); txt.set_color('white'); txt.set_fontsize(18)
+        elif master_rows[r] == [""] * 7:
+            cell.set_height(0.01); cell.visible_edges = ''
+        else:
+            cell.set_facecolor('#F9F9F9' if r % 2 == 0 else 'white'); txt.set_fontsize(24)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0, dpi=150, transparent=True)
+    t_img = Image.open(buf).convert('RGBA')
+    plt.close(fig)
+    arr = np.array(t_img)
+    non_empty_rows = np.where(np.any(arr[:, :, 3] > 10, axis=1))[0]
+    if len(non_empty_rows) > 0 and non_empty_rows[0] > 0:
+        t_img = t_img.crop((0, non_empty_rows[0], t_img.width, t_img.height))
+    return t_img
 
 # --- 機種単体テーブル描画（バナーなし）---
 def draw_machine_table(rows, color):
@@ -384,10 +455,13 @@ if uploaded_file:
                         if new_imgs:
                             st.session_state[f'images{sid}'].update(new_imgs)
                             save_images_to_file(st.session_state[f'images{sid}'], cfg["img"])
+                        save_form_state(sid, {str(i): {"m": st.session_state.get(f"m{sid}_{i}", "-- 選択 --"), "d": st.session_state.get(f"d{sid}_{i}", ""), "t": st.session_state.get(f"t{sid}_{i}", 1000)} for i in range(1, 4)})
                         st.rerun()
 
                 if st.session_state[f'targets{sid}']:
-                    for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn} ({t}枚以上)")
+                    for i, (cn, dn, t) in enumerate(st.session_state[f'targets{sid}']):
+                        has_img = ' 📷' if st.session_state.get(f'images{sid}', {}).get(dn) else ''
+                        st.write(f"{i+1}. {dn} ({t}枚以上){has_img}")
                     c_cl, c_ge = st.columns(2)
                     with c_cl:
                         if st.button(f"🗑️ リストをクリア", key=f"clr{sid}"):
@@ -420,21 +494,40 @@ if uploaded_file:
                 st.subheader("対象機種の管理")
                 with st.popover("➕ 機種を追加"):
                     new_ts3 = []
+                    new_imgs3 = {}
                     for i in range(1, 4):
                         m = st.selectbox(f"機種 {i}", ["-- 選択 --"] + machine_list, key=f"m{sid}_{i}", on_change=update_display_name, args=(sid, i))
                         if f"d{sid}_{i}" not in st.session_state: st.session_state[f"d{sid}_{i}"] = ""
                         d = st.text_input(f"表示名 {i}", key=f"d{sid}_{i}")
-                        if m != "-- 選択 --": new_ts3.append((m, d if d else apply_rename(m), 0))
+                        img_file = st.file_uploader(f"画像 {i}", type=["jpg","jpeg","png"], key=f"img{sid}_{i}")
+                        if m != "-- 選択 --":
+                            dn_val = d if d else apply_rename(m)
+                            new_ts3.append((m, dn_val, 0))
+                            if img_file:
+                                new_imgs3[dn_val] = img_file.read()
+                        st.divider()
                     if st.button("🚀 リストに登録", key=f"btn{sid}"):
-                        st.session_state[f'targets{sid}'].extend(new_ts3); save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"]); st.rerun()
+                        st.session_state[f'targets{sid}'].extend(new_ts3)
+                        save_targets_to_file(st.session_state[f'targets{sid}'], cfg["csv"])
+                        if new_imgs3:
+                            st.session_state[f'images{sid}'].update(new_imgs3)
+                            save_images_to_file(st.session_state[f'images{sid}'], cfg["img"])
+                        save_form_state(sid, {str(i): {"m": st.session_state.get(f"m{sid}_{i}", "-- 選択 --"), "d": st.session_state.get(f"d{sid}_{i}", ""), "t": 0} for i in range(1, 4)})
+                        st.rerun()
 
                 if st.session_state[f'targets{sid}']:
-                    for i, (cn, dn, _) in enumerate(st.session_state[f'targets{sid}']): st.write(f"{i+1}. {dn}")
+                    for i, (cn, dn, _) in enumerate(st.session_state[f'targets{sid}']):
+                        has_img = ' 📷' if st.session_state.get(f'images{sid}', {}).get(dn) else ''
+                        st.write(f"{i+1}. {dn}{has_img}")
                     if st.button("🗑️ リストをクリア", key=f"clr{sid}"):
-                        st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
+                        st.session_state[f'targets{sid}'] = []
+                        save_targets_to_file([], cfg["csv"])
+                        st.session_state[f'images{sid}'] = {}
+                        save_images_to_file({}, cfg["img"])
+                        st.rerun()
 
                 st.subheader("対象機種の仕掛け")
-                with st.expander("🔧 仕掛けを追加"):
+                with st.popover("🔧 仕掛けを追加"):
                     components.html("""<script>
 (function() {
     const doc = window.parent.document;
@@ -488,7 +581,7 @@ if uploaded_file:
                         content_list = [st.session_state.get(f"sc_{j}", "") for j in range(7)]
                         save_shikake_content(content_list)
                         st.session_state['shikake_content3'] = content_list
-                        st.toast("保存しました！")
+                        st.rerun()
                 saved = st.session_state.get('shikake_content3', [''] * 7)
                 for j, c in enumerate(saved):
                     if c:
@@ -528,8 +621,35 @@ if uploaded_file:
                             ])
                         master_rows.append([""] * 7)
                     if master_rows:
-                        st.session_state[f'report_img{sid}'] = draw_table_image(
-                            master_rows, h_idx, st.session_state[f'bg_color{sid}'], st.session_state[f'it{sid}'], sid)
+                        _color3 = st.session_state[f'bg_color{sid}']
+                        _text3 = st.session_state[f'it{sid}']
+                        _images3 = st.session_state.get(f'images{sid}', {})
+                        _targets3 = st.session_state.get(f'targets{sid}', [])
+                        t_img3 = draw_shikake_table_only(master_rows, h_idx, _color3)
+                        b_img3 = create_banner(_text3, _color3, 200, 100, -23, 2, t_img3.width)
+                        parts3 = [b_img3]
+                        if _targets3:
+                            first_dn = _targets3[0][1]
+                            img_bytes3 = _images3.get(first_dn)
+                            if img_bytes3:
+                                try:
+                                    raw3 = Image.open(io.BytesIO(img_bytes3)).convert("RGBA")
+                                    mach3 = raw3.resize((t_img3.width, int(raw3.height * t_img3.width / raw3.width)), Image.LANCZOS)
+                                    parts3.append(mach3)
+                                except:
+                                    pass
+                        parts3.append(t_img3)
+                        gap3 = 25
+                        total_h3 = sum(p.height for p in parts3) + gap3 * (len(parts3) - 1)
+                        result3 = Image.new("RGBA", (t_img3.width, total_h3), (255, 255, 255, 255))
+                        y3 = 0
+                        for p3 in parts3:
+                            result3.paste(p3, (0, y3), p3)
+                            y3 += p3.height + gap3
+                        padding3 = 40
+                        padded3 = Image.new("RGBA", (result3.width + padding3 * 2, result3.height + padding3 * 2), (255, 255, 255, 255))
+                        padded3.paste(result3, (padding3, padding3))
+                        st.session_state[f'report_img{sid}'] = padded3
 
             elif sid == "5":
                 # 差枚数TOP10
