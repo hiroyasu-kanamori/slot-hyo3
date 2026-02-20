@@ -11,6 +11,8 @@ import json
 import base64
 import streamlit.components.v1 as components
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # --- ページ設定 ---
 st.set_page_config(page_title="スロット優秀台レポート作成", layout="centered")
 
@@ -265,6 +267,22 @@ def draw_machine_table(rows, color):
         t_img = t_img.crop((0, non_empty[0], t_img.width, t_img.height))
     return t_img
 
+def find_machine_image(dn):
+    """display_name に対応する画像ファイルを探す。拡張子の揺れに対応。"""
+    import logging
+    log_path = os.path.join(BASE_DIR, "image_debug.log")
+    with open(log_path, "a", encoding="utf-8") as lf:
+        lf.write(f"find_machine_image called: dn={repr(dn)}\n")
+        for ext in [".jpg", ".jpg.jpg", ".JPG", ".jpeg", ".png"]:
+            p = os.path.join(BASE_DIR, f"{dn}{ext}")
+            exists = os.path.exists(p)
+            lf.write(f"  checking: {repr(p)} -> {exists}\n")
+            if exists:
+                lf.write(f"  FOUND: {p}\n")
+                return p
+        lf.write(f"  NOT FOUND for dn={repr(dn)}\n")
+    return None
+
 # --- 機種画像付きレポート生成（レポート1/2/4用）---
 def draw_report_with_machine_images(machine_sections, color, b_text):
     gap = 25
@@ -276,10 +294,10 @@ def draw_report_with_machine_images(machine_sections, color, b_text):
     for (dn, _), t_img in zip(machine_sections, table_imgs):
         if t_img.width != canvas_w:
             t_img = t_img.resize((canvas_w, int(t_img.height * canvas_w / t_img.width)), Image.LANCZOS)
-        jpg_path = f"{dn}.jpg"
-        if os.path.exists(jpg_path):
+        img_path = find_machine_image(dn)
+        if img_path:
             try:
-                raw = Image.open(jpg_path).convert("RGBA")
+                raw = Image.open(img_path).convert("RGBA")
                 mach_img = raw.resize((canvas_w, int(raw.height * canvas_w / raw.width)), Image.LANCZOS)
                 parts.append(mach_img)
             except:
