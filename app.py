@@ -8,6 +8,8 @@ import os
 import urllib.request
 import numpy as np
 import json
+import base64
+import streamlit.components.v1 as components
 
 # --- ページ設定 ---
 st.set_page_config(page_title="スロット優秀台レポート作成", layout="centered")
@@ -95,6 +97,59 @@ def load_shikake_content():
 def save_shikake_content(content_list):
     with open(SHIKAKE_FILE, "w", encoding="utf-8") as f:
         json.dump(content_list, f, ensure_ascii=False)
+
+@st.dialog("🔧 仕掛けを設定")
+def shikake_dialog():
+    components.html("""<script>
+(function() {
+    const doc = window.parent.document;
+    function addEnterHandlers() {
+        const inputs = doc.querySelectorAll('input[type="number"]');
+        inputs.forEach((input, index) => {
+            if (!input.dataset.enterHandled) {
+                input.dataset.enterHandled = 'true';
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const all = doc.querySelectorAll('input[type="number"]');
+                        const idx = Array.from(all).indexOf(e.target);
+                        if (idx >= 0 && idx < all.length - 1) all[idx + 1].focus();
+                    }
+                });
+            }
+        });
+    }
+    const observer = new MutationObserver(addEnterHandlers);
+    observer.observe(doc.body, { childList: true, subtree: true });
+    addEnterHandlers();
+})();
+</script>""", height=0)
+    for j in range(7):
+        st.markdown(f"**仕掛け{j+1}**")
+        col_input, col_btn = st.columns([4, 1])
+        with col_input:
+            st.text_input("仕掛けの内容", key=f"sc_{j}")
+        with col_btn:
+            st.write("")
+            def make_clear(jj):
+                def clear_sc():
+                    st.session_state[f"sc_{jj}"] = ""
+                    current = list(st.session_state.get('shikake_content3', [''] * 7))
+                    current[jj] = ""
+                    save_shikake_content(current)
+                    st.session_state['shikake_content3'] = current
+                return clear_sc
+            st.button("🗑️ クリア", key=f"clear_sc_{j}", on_click=make_clear(j))
+        cols = st.columns(5)
+        for k in range(10):
+            with cols[k % 5]:
+                st.number_input(f"台番{k+1}", min_value=0, step=1, value=None, key=f"sn_{j}_{k}")
+        st.divider()
+    if st.button("💾 仕掛けの内容を保存", key="save_shikake3"):
+        content_list = [st.session_state.get(f"sc_{j}", "") for j in range(7)]
+        save_shikake_content(content_list)
+        st.session_state['shikake_content3'] = content_list
+        st.rerun()
 
 # ==========================================
 # セッション状態の初期化
@@ -210,7 +265,13 @@ def draw_table_image(master_rows, h_idx, color, b_text, suffix):
     c_img.paste(b_img, (0, 0), b_img)
     c_img.paste(t_img, (0, b_img.height + gap), t_img)
 
-    plt.close(fig); return c_img
+    padding = 40
+    padded = Image.new("RGBA",
+        (c_img.width + padding * 2, c_img.height + padding * 2),
+        (255, 255, 255, 255))
+    padded.paste(c_img, (padding, padding))
+    plt.close(fig)
+    return padded
 
 # --- UI構築 ---
 st.title("📊 優秀台レポート作成アプリ")
@@ -303,20 +364,12 @@ if uploaded_file:
                         st.session_state[f'targets{sid}'] = []; save_targets_to_file([], cfg["csv"]); st.rerun()
 
                 st.subheader("対象機種の仕掛け")
-                with st.popover("🔧 仕掛けを追加"):
-                    for j in range(7):
-                        st.markdown(f"**仕掛け{j+1}**")
-                        st.text_input("仕掛けの内容", key=f"sc_{j}")
-                        cols = st.columns(5)
-                        for k in range(10):
-                            with cols[k % 5]:
-                                st.number_input(f"台番{k+1}", min_value=0, step=1, value=None, key=f"sn_{j}_{k}")
-                        st.divider()
-                    if st.button("💾 仕掛けの内容を保存", key="save_shikake3"):
-                        content_list = [st.session_state.get(f"sc_{j}", "") for j in range(7)]
-                        save_shikake_content(content_list)
-                        st.session_state['shikake_content3'] = content_list
-                        st.rerun()
+                if st.button("🔧 仕掛けを追加", key="open_shikake_dialog"):
+                    shikake_dialog()
+                saved = st.session_state.get('shikake_content3', [''] * 7)
+                if any(saved):
+                    for j, c in enumerate(saved):
+                        if c: st.markdown(f"- 仕掛け{j+1}: {c}")
 
                 if st.button("🔥 レポートを生成", key=f"gen{sid}"):
                     master_rows, h_idx = [], []
@@ -369,8 +422,27 @@ if uploaded_file:
                 st.image(st.session_state[f'report_img{sid}'])
                 c_img_dl, c_img_cl = st.columns(2)
                 with c_img_dl:
-                    out = io.BytesIO(); st.session_state[f'report_img{sid}'].convert("RGB").save(out, format="JPEG", quality=95)
-                    st.download_button(f"✅ 画像を保存", out.getvalue(), f"report{sid}.jpg", "image/jpeg", key=f"dl{sid}")
+                    img_buf = io.BytesIO()
+                    st.session_state[f'report_img{sid}'].save(img_buf, format="PNG")
+                    img_b64 = base64.b64encode(img_buf.getvalue()).decode()
+                    components.html(f"""
+<button onclick="copyImg_{sid}()" style="background:#4CAF50;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:14px;">✅ 画像をクリップボードに保存</button>
+<script>
+async function copyImg_{sid}() {{
+    const b64 = '{img_b64}';
+    const bin = atob(b64); const arr = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+    const blob = new Blob([arr], {{type:'image/png'}});
+    try {{
+        await navigator.clipboard.write([new ClipboardItem({{'image/png': blob}})]);
+        document.getElementById('msg_{sid}').textContent = 'コピーしました！';
+    }} catch(e) {{
+        document.getElementById('msg_{sid}').textContent = 'コピー失敗: ' + e.message;
+    }}
+}}
+</script>
+<span id="msg_{sid}"></span>
+""", height=60)
                 with c_img_cl:
                     if st.button(f"🗑️ 画像をクリア", key=f"img_clear{sid}"):
                         st.session_state[f'report_img{sid}'] = None
